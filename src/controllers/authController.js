@@ -50,3 +50,30 @@ export const login = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+/**
+ * POST /api/auth/send-welcome-email
+ * Envoie manuellement un email de bienvenue (pour tests ou renvoi)
+ */
+export const sendManualWelcomeEmail = async (req, res) => {
+  try {
+    const { name, email } = req.body;
+
+    if (!name || !email) {
+      return res.status(400).json({ message: "Nom et email requis" });
+    }
+
+    const result = await sendWelcomeEmail({ name, email });
+
+    res.status(200).json({
+      message: "Email de bienvenue envoyé avec succès",
+      result,
+    });
+  } catch (err) {
+    console.error("❌ Erreur lors de l'envoi de l'email de bienvenue:", err);
+    res.status(500).json({ 
+      message: "Échec de l'envoi de l'email de bienvenue",
+      error: err.message 
+    });
+  }
+};
