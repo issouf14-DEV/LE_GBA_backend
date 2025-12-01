@@ -4,9 +4,29 @@ Ce guide résume l'essentiel pour connecter ton frontend au backend GBA.
 
 ---
 
+## ✅ **STATUT BACKEND**
+
+🟢 **Backend actif sur :** https://le-gba-backend.onrender.com  
+🟢 **Health check :** https://le-gba-backend.onrender.com/health  
+🟢 **Toutes les routes email sont déployées et fonctionnelles**
+
+---
+
 ## 🔗 URL de base
+
+**Production (Render) :**
 ```
-http://localhost:5000
+https://le-gba-backend.onrender.com/api
+```
+
+**Local :**
+```
+http://localhost:5000/api
+```
+
+**Configuration .env.local :**
+```env
+NEXT_PUBLIC_API_URL=https://le-gba-backend.onrender.com/api
 ```
 
 ---
