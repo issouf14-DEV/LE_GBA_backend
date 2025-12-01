@@ -1,11 +1,26 @@
 # GBA Backend – Documentation Complète
 
-Ce backend Node.js gère l’API de gestion de véhicules, commandes, utilisateurs et paiements pour l’application GBA. Il utilise Express, MongoDB (Mongoose), Stripe, JWT, et propose une structure claire pour l’intégration frontend.
+Ce backend Node.js gère l'API de gestion de véhicules, commandes, utilisateurs et paiements pour l'application GBA. Il utilise Express, MongoDB (Mongoose), Stripe, JWT, et Nodemailer pour l'envoi d'emails.
+
+## ✨ Nouvelles fonctionnalités
+- ✅ **Système d'emails avec Nodemailer** (Gmail SMTP)
+- ✅ **6 types d'emails automatiques/manuels**
+- ✅ **Routes API complètes pour notifications**
+- ✅ **Templates HTML professionnels**
+- ✅ **Configuration Render.com prête**
+
+## 📚 Documentation
+
+- 📖 [EMAIL_ROUTES.md](./EMAIL_ROUTES.md) - Routes email complètes avec exemples
+- ⚙️ [RENDER_CONFIG.md](./RENDER_CONFIG.md) - Configuration Render.com
+- 🧪 [test-email-routes.ps1](./test-email-routes.ps1) - Script de test PowerShell
+- 📂 [docs/](./docs/) - Documentation détaillée
 
 ## Sommaire
 - [Installation & Prérequis](#installation--prérequis)
 - [Configuration (.env)](#configuration-env)
 - [Lancement du serveur](#lancement-du-serveur)
+- [Routes Email](#routes-email)
 - [Structure des dossiers](#structure-des-dossiers)
 - [Principaux endpoints API](#principaux-endpoints-api)
 - [Authentification & Sécurité](#authentification--sécurité)
@@ -55,10 +70,50 @@ EMAIL_APP_PASSWORD=votre_mot_de_passe_app_16_caracteres
 
 ## Lancement du serveur
 
-- **Développement** : `npm run dev`
-- **Production** : `npm start`
+- **Développement** : `npm run dev`
+- **Production** : `npm start`
 
 Le serveur démarre sur `http://localhost:5000` (modifiable via `PORT`).
+
+---
+
+## 📧 Routes Email
+
+### Routes disponibles
+
+| Route | Méthode | Auth | Description |
+|-------|---------|------|-------------|
+| `/api/auth/register` | POST | Non | Inscription + email de bienvenue automatique |
+| `/api/auth/send-welcome-email` | POST | Admin | Email de bienvenue manuel |
+| `/api/orders/notify-admin` | POST | User | Notifie l'admin d'une nouvelle commande |
+| `/api/orders/:id/send-notification` | POST | Admin | Envoie confirmation/rejet au client |
+| `/api/orders/:id/send-payment-reminder` | POST | Admin | Rappel de paiement |
+| `/api/orders/:id/send-rental-summary` | POST | Admin | Récapitulatif de location |
+
+### Configuration requise
+
+```env
+EMAIL_USER=fofanaissouf179@gmail.com
+EMAIL_APP_PASSWORD=xxxxxxxxxxxxxxxx  # 16 caractères
+ADMIN_EMAIL=fofanaissouf179@gmail.com
+```
+
+**Pour obtenir EMAIL_APP_PASSWORD :**
+1. Allez sur https://myaccount.google.com/apppasswords
+2. Générez un mot de passe pour "GBA Backend"
+3. Copiez les 16 caractères (sans espaces)
+
+### Tester les routes
+
+```powershell
+# Test local
+./test-email-routes.ps1
+
+# Ou avec Postman (collection fournie)
+postman_collection.json
+```
+
+**Documentation complète :** [EMAIL_ROUTES.md](./EMAIL_ROUTES.md)
 
 ---
 
