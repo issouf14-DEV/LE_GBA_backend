@@ -1,5 +1,6 @@
 import User from "../models/User.js";
 import jwt from "jsonwebtoken";
+import { sendWelcomeEmail } from "../services/emailService.js";
 
 const generateToken = (id, role) => {
   return jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: "30d" });
@@ -12,6 +13,12 @@ export const register = async (req, res) => {
     if (exist) return res.status(400).json({ message: "Email déjà utilisé" });
 
     const user = await User.create({ name, email, password });
+    
+    // Envoyer l'email de bienvenue (non-bloquant)
+    sendWelcomeEmail({ name: user.name, email: user.email })
+      .then(() => console.log('✅ Email de bienvenue envoyé à', email))
+      .catch(err => console.error('❌ Erreur email de bienvenue:', err.message));
+
     res.status(201).json({
       _id: user._id,
       name: user.name,

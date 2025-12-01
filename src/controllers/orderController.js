@@ -2,7 +2,12 @@
 import Vehicle from "../models/Vehicle.js";
 import Order from "../models/Order.js";
 import { createPaymentIntent } from "../utils/payment.js";
-import { sendNewOrderEmail, sendOrderConfirmation } from "../services/emailService.js";
+import { 
+  sendNewOrderEmail, 
+  sendOrderConfirmation,
+  sendPaymentReminderEmail,
+  sendRentalSummaryEmail 
+} from "../services/emailService.js";
 
 export const createOrder = async (req, res) => {
   try {
@@ -266,6 +271,135 @@ export const sendCustomerNotification = async (req, res) => {
     console.error("❌ Erreur lors de l'envoi de la notification client:", err);
     res.status(500).json({ 
       message: "Échec de l'envoi de l'email au client",
+      error: err.message 
+    });
+  }
+};
+
+/**
+ * POST /api/orders/:id/send-payment-reminder
+ * Envoie un rappel de paiement au client
+ */
+export const sendPaymentReminder = async (req, res) => {
+  try {
+    const { id: orderId } = req.params;
+
+    // Récupère la commande avec les détails du véhicule et de l'utilisateur
+    const order = await Order.findById(orderId)
+      .populate("user")
+      .populate("vehicles.vehicle");
+
+    if (!order) {
+      return res.status(404).json({ message: "Commande introuvable" });
+    }
+
+    // Vérifier que la commande nécessite un paiement
+    if (order.status === "payée" || order.status === "complétée") {
+      return res.status(400).json({ message: "Cette commande est déjà payée" });
+    }
+
+    // Prépare les données pour l'email
+    const vehicle = order.vehicles[0]?.vehicle;
+    if (!vehicle) {
+      return res.status(400).json({ message: "Aucun véhicule associé à cette commande" });
+    }
+
+    const orderData = {
+      orderId: order._id,
+      customerName: order.user.name || order.user.email,
+      customerEmail: order.user.email,
+      vehicleMake: vehicle.make || "N/A",
+      vehicleModel: vehicle.model || "N/A",
+      vehicleYear: vehicle.year || "N/A",
+      totalPrice: order.totalPrice,
+      dueDate: order.dueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 jours par défaut
+      daysRemaining: order.dueDate 
+        ? Math.ceil((new Date(order.dueDate) - new Date()) / (1000 * 60 * 60 * 24))
+        : 7,
+    };
+
+    // Envoi de l'email de rappel
+    const result = await sendPaymentReminderEmail(orderData);
+
+    res.status(200).json({
+      message: "Rappel de paiement envoyé au client",
+      result,
+    });
+  } catch (err) {
+    console.error("❌ Erreur lors de l'envoi du rappel de paiement:", err);
+    res.status(500).json({ 
+      message: "Échec de l'envoi du rappel de paiement",
+      error: err.message 
+    });
+  }
+};
+
+/**
+ * POST /api/orders/:id/send-rental-summary
+ * Envoie un récapitulatif de location au client après restitution
+ */
+export const sendRentalSummary = async (req, res) => {
+  try {
+    const { id: orderId } = req.params;
+    const { 
+      startDate,
+      endDate,
+      startKm,
+      endKm,
+      fuelLevelStart,
+      fuelLevelEnd,
+      vehicleCondition = "Bon état",
+      additionalCharges = 0,
+      additionalChargesReason = ""
+    } = req.body;
+
+    // Récupère la commande avec les détails du véhicule et de l'utilisateur
+    const order = await Order.findById(orderId)
+      .populate("user")
+      .populate("vehicles.vehicle");
+
+    if (!order) {
+      return res.status(404).json({ message: "Commande introuvable" });
+    }
+
+    // Prépare les données pour l'email
+    const vehicle = order.vehicles[0]?.vehicle;
+    if (!vehicle) {
+      return res.status(400).json({ message: "Aucun véhicule associé à cette commande" });
+    }
+
+    const rentalData = {
+      orderId: order._id,
+      customerName: order.user.name || order.user.email,
+      customerEmail: order.user.email,
+      vehicleMake: vehicle.make || "N/A",
+      vehicleModel: vehicle.model || "N/A",
+      vehicleYear: vehicle.year || "N/A",
+      startDate: startDate || order.createdAt,
+      endDate: endDate || new Date(),
+      startKm: startKm || 0,
+      endKm: endKm || 0,
+      kmTraveled: (endKm || 0) - (startKm || 0),
+      fuelLevelStart: fuelLevelStart || "Plein",
+      fuelLevelEnd: fuelLevelEnd || "Plein",
+      vehicleCondition,
+      rentalPrice: order.totalPrice,
+      additionalCharges,
+      additionalChargesReason,
+      totalPrice: order.totalPrice + additionalCharges,
+    };
+
+    // Envoi de l'email de récapitulatif
+    const result = await sendRentalSummaryEmail(rentalData);
+
+    res.status(200).json({
+      message: "Récapitulatif de location envoyé au client",
+      result,
+    });
+  } catch (err) {
+    console.error("❌ Erreur lors de l'envoi du récapitulatif de location:", err);
+    res.status(500).json({ 
+      message: "Échec de l'envoi du récapitulatif de location",
       error: err.message 
     });
   }
