@@ -2,6 +2,7 @@
 import Vehicle from "../models/Vehicle.js";
 import Order from "../models/Order.js";
 import { createPaymentIntent } from "../utils/payment.js";
+import { sendNewOrderEmail, sendOrderConfirmation } from "../services/emailService.js";
 
 export const createOrder = async (req, res) => {
   try {
@@ -154,5 +155,118 @@ export const updateOrderStatus = async (req, res) => {
     res.json(order);
   } catch (err) {
     res.status(400).json({ message: err.message });
+  }
+};
+
+/**
+ * POST /api/orders/notify-admin
+ * Envoie un email de notification à l'admin pour une nouvelle commande
+ */
+export const notifyAdmin = async (req, res) => {
+  try {
+    const {
+      orderId,
+      customerName,
+      customerEmail,
+      customerPhone,
+      vehicleMake,
+      vehicleModel,
+      vehicleYear,
+      pickupDate,
+      returnDate,
+      totalPrice,
+    } = req.body;
+
+    // Validation des données requises
+    if (!orderId || !customerName || !customerEmail || !vehicleMake || !vehicleModel || !totalPrice) {
+      return res.status(400).json({ 
+        message: "Données manquantes pour l'envoi de l'email",
+        required: ["orderId", "customerName", "customerEmail", "vehicleMake", "vehicleModel", "totalPrice"]
+      });
+    }
+
+    // Envoi de l'email à l'admin
+    const result = await sendNewOrderEmail({
+      orderId,
+      customerName,
+      customerEmail,
+      customerPhone: customerPhone || "Non fourni",
+      vehicleMake,
+      vehicleModel,
+      vehicleYear: vehicleYear || "N/A",
+      pickupDate,
+      returnDate,
+      totalPrice,
+    });
+
+    res.status(200).json({
+      message: "Email de notification envoyé à l'administrateur",
+      result,
+    });
+  } catch (err) {
+    console.error("❌ Erreur lors de l'envoi de la notification admin:", err);
+    res.status(500).json({ 
+      message: "Échec de l'envoi de l'email à l'administrateur",
+      error: err.message 
+    });
+  }
+};
+
+/**
+ * POST /api/orders/:id/send-notification
+ * Envoie un email de confirmation au client (validation ou rejet)
+ */
+export const sendCustomerNotification = async (req, res) => {
+  try {
+    const { id: orderId } = req.params;
+    const { status } = req.body; // "approved" ou "rejected"
+
+    // Validation du statut
+    if (!status || !["approved", "rejected"].includes(status)) {
+      return res.status(400).json({ 
+        message: "Statut invalide. Utilisez 'approved' ou 'rejected'",
+      });
+    }
+
+    // Récupère la commande avec les détails du véhicule et de l'utilisateur
+    const order = await Order.findById(orderId)
+      .populate("user")
+      .populate("vehicles.vehicle");
+
+    if (!order) {
+      return res.status(404).json({ message: "Commande introuvable" });
+    }
+
+    // Prépare les données pour l'email
+    const vehicle = order.vehicles[0]?.vehicle;
+    if (!vehicle) {
+      return res.status(400).json({ message: "Aucun véhicule associé à cette commande" });
+    }
+
+    const orderData = {
+      orderId: order._id,
+      customerName: order.user.name || order.user.email,
+      customerEmail: order.user.email,
+      vehicleMake: vehicle.make || "N/A",
+      vehicleModel: vehicle.model || "N/A",
+      vehicleYear: vehicle.year || "N/A",
+      pickupDate: order.createdAt, // Adapter selon votre modèle
+      returnDate: order.createdAt, // Adapter selon votre modèle
+      totalPrice: order.totalPrice,
+    };
+
+    // Envoi de l'email au client
+    const result = await sendOrderConfirmation(orderData, status);
+
+    res.status(200).json({
+      message: `Email de ${status === "approved" ? "confirmation" : "refus"} envoyé au client`,
+      result,
+    });
+  } catch (err) {
+    console.error("❌ Erreur lors de l'envoi de la notification client:", err);
+    res.status(500).json({ 
+      message: "Échec de l'envoi de l'email au client",
+      error: err.message 
+    });
   }
 };

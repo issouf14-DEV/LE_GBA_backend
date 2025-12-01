@@ -45,6 +45,10 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 VEHICLE_DATABASE_API_URL=https://api.api-ninjas.com/v1/vehicles
 VEHICLE_DATABASE_API_KEY=ta_clef_api_vehicle_db
 UNSPLASH_ACCESS_KEY=ta_clef_unsplash
+
+# Email Configuration (NOUVEAU - voir QUICK_START.md)
+EMAIL_USER=votre-email@gmail.com
+EMAIL_APP_PASSWORD=votre_mot_de_passe_app_16_caracteres
 ```
 
 ---
@@ -98,6 +102,10 @@ Le serveur démarre sur `http://localhost:5000` (modifiable via `PORT`).
 - `GET /api/admin/users` : liste des utilisateurs (admin)
 - `GET /api/admin/orders` : toutes les commandes (admin)
 
+### 📧 Emails & Notifications (NOUVEAU)
+- `POST /api/orders/notify-admin` : envoyer notification email à l'admin (nouvelle commande)
+- `POST /api/orders/:id/send-notification` : envoyer confirmation email au client (validation/rejet)
+
 ---
 
 ## Authentification & Sécurité
@@ -140,12 +148,39 @@ Le serveur démarre sur `http://localhost:5000` (modifiable via `PORT`).
 
 ---
 
-## Annexes
-- **Tests** : `npm test` (Jest, Supertest)
-- **Logs** : Morgan (console)
-- **CORS** : activé pour tous les domaines (modifie dans `src/app.js` si besoin)
-- **Erreurs** : middleware global, format JSON
+## 📧 Service d'Emails (NOUVEAU)
+
+Le backend peut maintenant envoyer des **emails réels** (plus de simulation console) :
+
+### Fonctionnalités
+- ✅ Notification email à l'admin lors d'une nouvelle commande
+- ✅ Email de confirmation au client (commande validée/rejetée)
+- ✅ Templates HTML professionnels avec style
+- ✅ Configuration simple avec Gmail ou SendGrid
+
+### Configuration rapide
+1. **Obtenir un mot de passe d'application Gmail** : https://myaccount.google.com/apppasswords
+2. **Configurer `.env`** :
+   ```env
+   EMAIL_USER=votre-email@gmail.com
+   EMAIL_APP_PASSWORD=abcdefghijklmnop
+   ```
+3. **Tester** : voir `QUICK_START.md`
+
+### Documentation complète
+- **Démarrage rapide** : [`QUICK_START.md`](./QUICK_START.md)
+- **Guide complet** : [`EMAIL_CONFIGURATION.md`](./EMAIL_CONFIGURATION.md)
+- **Déploiement Render** : [`RENDER_EMAIL_SETUP.md`](./RENDER_EMAIL_SETUP.md)
+- **Collection Postman** : [`postman_collection.json`](./postman_collection.json)
 
 ---
 
-Pour toute question ou besoin d’exemple d’appel API (fetch/Axios), demande !# LE_GBA-FRONTEND
+## Annexes
+- **Tests** : `npm test` (Jest, Supertest)
+- **Logs** : Morgan (console)
+- **CORS** : activé pour tous les domaines (modifie dans `src/app.js` si besoin)
+- **Erreurs** : middleware global, format JSON
+
+---
+
+Pour toute question ou besoin d'exemple d'appel API (fetch/Axios), demande !
