@@ -1,17 +1,37 @@
-import nodemailer from 'nodemailer';
+import sgMail from '@sendgrid/mail';
 
 /**
- * Configuration du transporteur Nodemailer
- * Utilise Gmail avec authentification par mot de passe d'application
+ * Configuration SendGrid
+ * Plus fiable que Gmail SMTP pour les services cloud comme Render
  */
-const createTransporter = () => {
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_APP_PASSWORD,
-    },
-  });
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
+/**
+ * Fonction utilitaire pour envoyer des emails via SendGrid
+ * @param {Object} emailData - Les données de l'email
+ * @returns {Promise<Object>} Résultat de l'envoi
+ */
+const sendEmail = async (emailData) => {
+  try {
+    const msg = {
+      from: {
+        email: process.env.EMAIL_USER || 'noreply@gba.com',
+        name: 'GBA Location'
+      },
+      ...emailData
+    };
+
+    const response = await sgMail.send(msg);
+    console.log('✅ Email envoyé avec succès via SendGrid');
+    return {
+      success: true,
+      messageId: response[0].headers['x-message-id'],
+      accepted: [emailData.to]
+    };
+  } catch (error) {
+    console.error('❌ Erreur SendGrid:', error.response?.body || error.message);
+    throw new Error(`Échec d'envoi email: ${error.message}`);
+  }
 };
 
 /**
@@ -21,8 +41,6 @@ const createTransporter = () => {
  */
 export const sendNewOrderEmail = async (orderData) => {
   try {
-    const transporter = createTransporter();
-
     const {
       orderId,
       customerName,
@@ -36,9 +54,8 @@ export const sendNewOrderEmail = async (orderData) => {
       totalPrice,
     } = orderData;
 
-    const mailOptions = {
-      from: `"GBA Location" <${process.env.EMAIL_USER}>`,
-      to: process.env.ADMIN_EMAIL,
+    const emailData = {
+      to: process.env.ADMIN_EMAIL || 'fofanaissouf179@gmail.com',
       subject: `🚗 Nouvelle commande #${orderId}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
@@ -50,7 +67,7 @@ export const sendNewOrderEmail = async (orderData) => {
             <h3 style="color: #3498db; margin-top: 0;">Informations Client</h3>
             <p><strong>Nom:</strong> ${customerName}</p>
             <p><strong>Email:</strong> ${customerEmail}</p>
-            <p><strong>Téléphone:</strong> ${customerPhone}</p>
+            <p><strong>Téléphone:</strong> ${customerPhone || 'Non renseigné'}</p>
           </div>
 
           <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
@@ -80,17 +97,11 @@ export const sendNewOrderEmail = async (orderData) => {
       `,
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Email envoyé à l\'admin:', info.messageId);
-    
-    return {
-      success: true,
-      messageId: info.messageId,
-      message: 'Email envoyé avec succès à l\'administrateur',
-    };
+    return await sendEmail(emailData);
+
   } catch (error) {
-    console.error('❌ Erreur lors de l\'envoi de l\'email à l\'admin:', error);
-    throw new Error(`Échec de l'envoi de l'email: ${error.message}`);
+    console.error('❌ Erreur lors de l\'envoi de l\'email admin:', error);
+    throw error;
   }
 };
 
@@ -102,8 +113,6 @@ export const sendNewOrderEmail = async (orderData) => {
  */
 export const sendOrderConfirmation = async (orderData, status) => {
   try {
-    const transporter = createTransporter();
-
     const {
       orderId,
       customerName,
@@ -118,8 +127,7 @@ export const sendOrderConfirmation = async (orderData, status) => {
 
     const isApproved = status === 'approved';
     
-    const mailOptions = {
-      from: `"GBA Location" <${process.env.EMAIL_USER}>`,
+    const emailData = {
       to: customerEmail,
       subject: isApproved 
         ? `✅ Commande confirmée #${orderId}` 
@@ -187,7 +195,7 @@ export const sendOrderConfirmation = async (orderData, status) => {
           <div style="margin-top: 30px; padding: 15px; background-color: #ecf0f1; border-radius: 5px;">
             <p style="margin: 0; color: #34495e;">
               Pour toute question, contactez-nous:<br>
-              📧 Email: ${process.env.ADMIN_EMAIL}<br>
+              📧 Email: ${process.env.ADMIN_EMAIL || 'fofanaissouf179@gmail.com'}<br>
               📞 Téléphone: +33 X XX XX XX XX
             </p>
           </div>
@@ -195,123 +203,100 @@ export const sendOrderConfirmation = async (orderData, status) => {
           <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
           
           <p style="color: #7f8c8d; font-size: 12px; text-align: center;">
-            Merci de votre confiance.<br>
-            L'équipe GBA Location
+            Cet email a été envoyé automatiquement par le système GBA Location.
           </p>
         </div>
       `,
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ Email de confirmation (${status}) envoyé au client:`, info.messageId);
-    
-    return {
-      success: true,
-      messageId: info.messageId,
-      message: `Email de confirmation (${status}) envoyé avec succès au client`,
-    };
+    return await sendEmail(emailData);
+
   } catch (error) {
     console.error('❌ Erreur lors de l\'envoi de l\'email de confirmation:', error);
-    throw new Error(`Échec de l'envoi de l'email de confirmation: ${error.message}`);
+    throw error;
   }
 };
 
 /**
- * Envoie un email de bienvenue lors de l'inscription d'un nouvel utilisateur
+ * Envoie un email de bienvenue au nouvel utilisateur
  * @param {Object} userData - Les données de l'utilisateur
  * @returns {Promise<Object>} Résultat de l'envoi
  */
 export const sendWelcomeEmail = async (userData) => {
   try {
-    const transporter = createTransporter();
-
     const { name, email } = userData;
 
-    const mailOptions = {
-      from: `"GBA Location" <${process.env.EMAIL_USER}>`,
+    const emailData = {
       to: email,
-      subject: '🎉 Bienvenue chez GBA Location !',
+      subject: `🎉 Bienvenue chez GBA Location, ${name} !`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
           <div style="text-align: center; margin-bottom: 30px;">
             <h1 style="color: #3498db; margin: 0;">🚗 GBA Location</h1>
-            <p style="color: #7f8c8d; margin: 5px 0;">Votre partenaire de confiance</p>
+            <p style="color: #7f8c8d; margin: 10px 0 0 0;">Votre partenaire location de véhicules</p>
           </div>
 
-          <h2 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px;">
-            Bienvenue ${name} !
-          </h2>
+          <h2 style="color: #2c3e50; text-align: center;">Bienvenue ${name} !</h2>
           
           <p style="font-size: 16px; color: #34495e; line-height: 1.6;">
-            Nous sommes ravis de vous accueillir parmi nos clients ! 🎉
+            Nous sommes ravis de vous accueillir dans la famille GBA Location ! 🎉
           </p>
 
-          <div style="background-color: #e8f5e9; padding: 20px; border-radius: 5px; border-left: 4px solid #27ae60; margin: 20px 0;">
-            <h3 style="color: #27ae60; margin-top: 0;">✅ Votre compte est créé</h3>
-            <p style="margin: 0; color: #2c3e50;">
-              Vous pouvez maintenant profiter de tous nos services de location de véhicules.
-            </p>
-          </div>
-
-          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0;">
-            <h3 style="color: #3498db; margin-top: 0;">🚀 Commencez dès maintenant</h3>
+          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 25px 0;">
+            <h3 style="color: #3498db; margin-top: 0;">Ce que nous vous offrons :</h3>
             <ul style="color: #34495e; line-height: 1.8;">
-              <li>Parcourez notre flotte de véhicules disponibles</li>
-              <li>Choisissez vos dates de location</li>
-              <li>Réservez en quelques clics</li>
-              <li>Recevez une confirmation par email</li>
+              <li>🚗 Large gamme de véhicules</li>
+              <li>💰 Prix compétitifs</li>
+              <li>📞 Support client 7j/7</li>
+              <li>🔧 Véhicules entretenus et assurés</li>
+              <li>⚡ Réservation en ligne simple</li>
             </ul>
           </div>
 
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.FRONTEND_URL}/vehicles" 
+            <a href="${process.env.FRONTEND_URL || 'https://gba-location.com'}/vehicles" 
                style="display: inline-block; background-color: #3498db; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">
-              Voir nos véhicules
+              🚗 Découvrir nos véhicules
             </a>
           </div>
 
-          <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <h4 style="color: #856404; margin-top: 0;">📞 Besoin d'aide ?</h4>
-            <p style="margin: 0; color: #856404;">
-              Notre équipe est à votre disposition :<br>
-              📧 Email : ${process.env.ADMIN_EMAIL}<br>
-              📱 Téléphone : +33 X XX XX XX XX
+          <div style="background-color: #e8f5e9; padding: 15px; border-radius: 5px; border-left: 4px solid #27ae60; margin: 20px 0;">
+            <p style="color: #27ae60; margin: 0;">
+              <strong>Astuce :</strong> Réservez à l'avance pour bénéficier de nos meilleurs tarifs !
+            </p>
+          </div>
+
+          <div style="margin-top: 30px; padding: 15px; background-color: #ecf0f1; border-radius: 5px;">
+            <p style="margin: 0; color: #34495e; text-align: center;">
+              Des questions ? Nous sommes là pour vous aider !<br>
+              📧 ${process.env.ADMIN_EMAIL || 'fofanaissouf179@gmail.com'} | 📞 +33 X XX XX XX XX
             </p>
           </div>
 
           <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
           
           <p style="color: #7f8c8d; font-size: 12px; text-align: center;">
-            Merci de votre confiance !<br>
-            L'équipe GBA Location
+            Cet email a été envoyé automatiquement suite à votre inscription sur GBA Location.
           </p>
         </div>
       `,
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Email de bienvenue envoyé:', info.messageId);
-    
-    return {
-      success: true,
-      messageId: info.messageId,
-      message: 'Email de bienvenue envoyé avec succès',
-    };
+    return await sendEmail(emailData);
+
   } catch (error) {
     console.error('❌ Erreur lors de l\'envoi de l\'email de bienvenue:', error);
-    throw new Error(`Échec de l'envoi de l'email de bienvenue: ${error.message}`);
+    throw error;
   }
 };
 
 /**
- * Envoie un email de rappel de paiement pour une commande
+ * Envoie un rappel de paiement au client
  * @param {Object} orderData - Les données de la commande
  * @returns {Promise<Object>} Résultat de l'envoi
  */
 export const sendPaymentReminderEmail = async (orderData) => {
   try {
-    const transporter = createTransporter();
-
     const {
       orderId,
       customerName,
@@ -319,107 +304,95 @@ export const sendPaymentReminderEmail = async (orderData) => {
       vehicleMake,
       vehicleModel,
       vehicleYear,
-      pickupDate,
       totalPrice,
-      daysUntilPickup,
+      dueDate,
+      daysRemaining
     } = orderData;
 
-    const mailOptions = {
-      from: `"GBA Location" <${process.env.EMAIL_USER}>`,
+    const emailData = {
       to: customerEmail,
-      subject: `⏰ Rappel : Paiement de votre location #${orderId}`,
+      subject: `⏰ Rappel de paiement - Commande #${orderId}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
-          <h2 style="color: #2c3e50; border-bottom: 2px solid #f39c12; padding-bottom: 10px;">
-            ⏰ Rappel de Paiement
+          <h2 style="color: #e67e22; border-bottom: 2px solid #e67e22; padding-bottom: 10px;">
+            ⏰ Rappel de paiement
           </h2>
           
           <p style="font-size: 16px; color: #34495e;">
             Bonjour <strong>${customerName}</strong>,
           </p>
 
-          <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; border-left: 4px solid #f39c12; margin: 20px 0;">
+          <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; border-left: 4px solid #ffc107; margin: 20px 0;">
             <p style="color: #856404; font-weight: bold; margin: 0;">
-              ⚠️ N'oubliez pas de finaliser le paiement de votre location !
+              ⚠️ Votre paiement pour la commande #${orderId} est en attente.
             </p>
           </div>
 
-          <p style="color: #34495e;">
-            Votre date de récupération approche ${daysUntilPickup > 0 ? `dans <strong>${daysUntilPickup} jour${daysUntilPickup > 1 ? 's' : ''}</strong>` : '<strong>aujourd\'hui</strong>'}.
-            Veuillez vous assurer que le paiement est effectué avant la prise en charge du véhicule.
-          </p>
-
           <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <h3 style="color: #3498db; margin-top: 0;">📋 Récapitulatif de votre réservation</h3>
-            <p><strong>Numéro de commande :</strong> #${orderId}</p>
-            <p><strong>Véhicule :</strong> ${vehicleMake} ${vehicleModel} (${vehicleYear})</p>
-            <p><strong>Date de récupération :</strong> ${new Date(pickupDate).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-            <p><strong>Montant à régler :</strong> <span style="font-size: 20px; font-weight: bold; color: #e74c3c;">${totalPrice} €</span></p>
+            <h3 style="color: #e67e22; margin-top: 0;">Détails de votre commande</h3>
+            <p><strong>Véhicule:</strong> ${vehicleMake} ${vehicleModel} (${vehicleYear})</p>
+            <p><strong>Montant à payer:</strong> <span style="font-size: 20px; font-weight: bold; color: #e67e22;">${totalPrice} €</span></p>
+            <p><strong>Date limite:</strong> ${new Date(dueDate).toLocaleDateString('fr-FR')}</p>
+            <p><strong>Jours restants:</strong> <span style="color: ${daysRemaining <= 2 ? '#e74c3c' : '#e67e22'}; font-weight: bold;">${daysRemaining} jour(s)</span></p>
           </div>
 
-          <div style="background-color: #e3f2fd; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <h4 style="color: #1565c0; margin-top: 0;">💳 Modes de paiement acceptés</h4>
-            <ul style="color: #34495e; line-height: 1.8;">
-              <li>Carte bancaire (en ligne ou à l'agence)</li>
-              <li>Espèces (à l'agence uniquement)</li>
+          <div style="background-color: #e8f4fd; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <h4 style="color: #2980b9; margin-top: 0;">💳 Moyens de paiement acceptés:</h4>
+            <ul style="color: #34495e; line-height: 1.6;">
+              <li>Carte bancaire (Visa, MasterCard)</li>
               <li>Virement bancaire</li>
+              <li>PayPal</li>
+              <li>Espèces (en agence)</li>
             </ul>
           </div>
 
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.FRONTEND_URL}/orders/${orderId}" 
-               style="display: inline-block; background-color: #27ae60; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">
-              Voir ma commande
+            <a href="${process.env.FRONTEND_URL || 'https://gba-location.com'}/payment/${orderId}" 
+               style="display: inline-block; background-color: #e67e22; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+              💳 Payer maintenant
             </a>
           </div>
 
-          <div style="background-color: #ffebee; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p style="margin: 0; color: #c62828;">
-              ⚠️ <strong>Important :</strong> Sans confirmation de paiement, votre réservation pourrait être annulée.
-            </p>
-          </div>
+          ${daysRemaining <= 2 ? `
+            <div style="background-color: #ffebee; padding: 15px; border-radius: 5px; border-left: 4px solid #e74c3c; margin: 20px 0;">
+              <p style="color: #e74c3c; font-weight: bold; margin: 0;">
+                🚨 Attention : Si le paiement n'est pas effectué sous 48h, votre réservation sera annulée.
+              </p>
+            </div>
+          ` : ''}
 
           <div style="margin-top: 30px; padding: 15px; background-color: #ecf0f1; border-radius: 5px;">
             <p style="margin: 0; color: #34495e;">
-              Des questions ? Contactez-nous :<br>
-              📧 Email : ${process.env.ADMIN_EMAIL}<br>
-              📞 Téléphone : +33 X XX XX XX XX
+              Questions ? Contactez-nous:<br>
+              📧 Email: ${process.env.ADMIN_EMAIL || 'fofanaissouf179@gmail.com'}<br>
+              📞 Téléphone: +33 X XX XX XX XX
             </p>
           </div>
 
           <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
           
           <p style="color: #7f8c8d; font-size: 12px; text-align: center;">
-            Merci de votre confiance !<br>
-            L'équipe GBA Location
+            Cet email a été envoyé automatiquement par le système GBA Location.
           </p>
         </div>
       `,
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Email de rappel de paiement envoyé:', info.messageId);
-    
-    return {
-      success: true,
-      messageId: info.messageId,
-      message: 'Email de rappel envoyé avec succès',
-    };
+    return await sendEmail(emailData);
+
   } catch (error) {
     console.error('❌ Erreur lors de l\'envoi du rappel de paiement:', error);
-    throw new Error(`Échec de l'envoi du rappel de paiement: ${error.message}`);
+    throw error;
   }
 };
 
 /**
- * Envoie un email récapitulatif en fin de location
+ * Envoie un récapitulatif de location après restitution
  * @param {Object} rentalData - Les données de la location
  * @returns {Promise<Object>} Résultat de l'envoi
  */
 export const sendRentalSummaryEmail = async (rentalData) => {
   try {
-    const transporter = createTransporter();
-
     const {
       orderId,
       customerName,
@@ -427,138 +400,164 @@ export const sendRentalSummaryEmail = async (rentalData) => {
       vehicleMake,
       vehicleModel,
       vehicleYear,
-      pickupDate,
-      returnDate,
-      totalPrice,
-      kmDriven,
-      fuelLevel,
-      condition,
+      startDate,
+      endDate,
+      startKm,
+      endKm,
+      kmTraveled,
+      fuelLevelStart,
+      fuelLevelEnd,
+      vehicleCondition,
+      rentalPrice,
+      additionalCharges,
+      additionalChargesReason,
+      totalPrice
     } = rentalData;
 
-    const rentalDuration = Math.ceil((new Date(returnDate) - new Date(pickupDate)) / (1000 * 60 * 60 * 24));
-
-    const mailOptions = {
-      from: `"GBA Location" <${process.env.EMAIL_USER}>`,
+    const emailData = {
       to: customerEmail,
-      subject: `📊 Récapitulatif de votre location #${orderId}`,
+      subject: `📄 Récapitulatif de location - Commande #${orderId}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
-          <div style="text-align: center; margin-bottom: 20px;">
-            <h1 style="color: #3498db; margin: 0;">🚗 GBA Location</h1>
-          </div>
-
-          <h2 style="color: #2c3e50; border-bottom: 2px solid #27ae60; padding-bottom: 10px;">
-            ✅ Location Terminée avec Succès
+          <h2 style="color: #27ae60; border-bottom: 2px solid #27ae60; padding-bottom: 10px;">
+            📄 Récapitulatif de votre location
           </h2>
           
           <p style="font-size: 16px; color: #34495e;">
             Bonjour <strong>${customerName}</strong>,
           </p>
 
-          <div style="background-color: #e8f5e9; padding: 15px; border-radius: 5px; border-left: 4px solid #27ae60; margin: 20px 0;">
-            <p style="color: #27ae60; font-weight: bold; margin: 0;">
-              🎉 Merci d'avoir choisi GBA Location !
-            </p>
-            <p style="margin: 10px 0 0 0; color: #2c3e50;">
-              Nous espérons que votre expérience s'est bien déroulée.
-            </p>
+          <p style="color: #34495e;">
+            Merci d'avoir choisi GBA Location ! Voici le récapitulatif de votre location.
+          </p>
+
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <h3 style="color: #27ae60; margin-top: 0;">🚗 Détails du véhicule</h3>
+            <p><strong>Véhicule:</strong> ${vehicleMake} ${vehicleModel} (${vehicleYear})</p>
+            <p><strong>Période de location:</strong> ${new Date(startDate).toLocaleDateString('fr-FR')} - ${new Date(endDate).toLocaleDateString('fr-FR')}</p>
+            <p><strong>Durée:</strong> ${Math.ceil((new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24))} jour(s)</p>
+          </div>
+
+          <div style="background-color: #e8f5e9; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <h3 style="color: #27ae60; margin-top: 0;">📊 État du véhicule</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <div>
+                <p><strong>Kilométrage initial:</strong> ${startKm ? startKm.toLocaleString() : 'N/A'} km</p>
+                <p><strong>Kilométrage final:</strong> ${endKm ? endKm.toLocaleString() : 'N/A'} km</p>
+                <p><strong>Distance parcourue:</strong> <span style="color: #27ae60; font-weight: bold;">${kmTraveled ? kmTraveled.toLocaleString() : 'N/A'} km</span></p>
+              </div>
+              <div>
+                <p><strong>Carburant (début):</strong> ${fuelLevelStart || 'N/A'}</p>
+                <p><strong>Carburant (fin):</strong> ${fuelLevelEnd || 'N/A'}</p>
+                <p><strong>État général:</strong> <span style="color: #27ae60;">${vehicleCondition || 'Bon état'}</span></p>
+              </div>
+            </div>
           </div>
 
           <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <h3 style="color: #3498db; margin-top: 0;">📋 Détails de votre location</h3>
-            <p><strong>Numéro de commande :</strong> #${orderId}</p>
-            <p><strong>Véhicule :</strong> ${vehicleMake} ${vehicleModel} (${vehicleYear})</p>
-            <p><strong>Date de début :</strong> ${new Date(pickupDate).toLocaleDateString('fr-FR')}</p>
-            <p><strong>Date de retour :</strong> ${new Date(returnDate).toLocaleDateString('fr-FR')}</p>
-            <p><strong>Durée :</strong> ${rentalDuration} jour${rentalDuration > 1 ? 's' : ''}</p>
+            <h3 style="color: #2980b9; margin-top: 0;">💰 Facturation</h3>
+            <p><strong>Prix de location:</strong> ${rentalPrice} €</p>
+            ${additionalCharges > 0 ? `
+              <p><strong>Frais supplémentaires:</strong> ${additionalCharges} €</p>
+              <p style="font-size: 14px; color: #7f8c8d;"><em>Raison: ${additionalChargesReason}</em></p>
+            ` : ''}
+            <hr style="border: none; border-top: 1px solid #ddd; margin: 10px 0;">
+            <p><strong>Total final:</strong> <span style="font-size: 20px; font-weight: bold; color: #27ae60;">${totalPrice} €</span></p>
           </div>
 
           <div style="background-color: #e3f2fd; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <h3 style="color: #1565c0; margin-top: 0;">📊 Statistiques de la location</h3>
-            <p><strong>Kilomètres parcourus :</strong> ${kmDriven || 'N/A'} km</p>
-            <p><strong>Niveau de carburant :</strong> ${fuelLevel || 'N/A'}</p>
-            <p><strong>État du véhicule :</strong> ${condition || 'Bon état'}</p>
-          </div>
-
-          <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <h3 style="color: #856404; margin-top: 0;">💰 Récapitulatif financier</h3>
-            <p style="margin: 0;"><strong>Montant total :</strong> <span style="font-size: 20px; font-weight: bold; color: #27ae60;">${totalPrice} €</span></p>
-            <p style="margin: 10px 0 0 0; font-size: 14px; color: #856404;">
-              ✅ Paiement effectué - Merci !
+            <h4 style="color: #1565c0; margin-top: 0;">⭐ Votre avis nous intéresse !</h4>
+            <p style="color: #34495e; margin-bottom: 15px;">
+              Aidez-nous à améliorer nos services en laissant un avis sur votre expérience.
             </p>
-          </div>
-
-          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0;">
-            <h3 style="color: #3498db; margin-top: 0;">⭐ Votre avis compte !</h3>
-            <p style="color: #34495e;">
-              Nous aimerions connaître votre expérience. Votre retour nous aide à nous améliorer.
-            </p>
-            <div style="text-align: center; margin-top: 15px;">
-              <a href="${process.env.FRONTEND_URL}/feedback/${orderId}" 
-                 style="display: inline-block; background-color: #f39c12; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">
-                Laisser un avis
+            <div style="text-align: center;">
+              <a href="${process.env.FRONTEND_URL || 'https://gba-location.com'}/review/${orderId}" 
+                 style="display: inline-block; background-color: #1565c0; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+                ⭐ Laisser un avis
               </a>
             </div>
           </div>
 
-          <div style="background-color: #e8f5e9; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <h4 style="color: #27ae60; margin-top: 0;">🎁 Offre spéciale fidélité</h4>
-            <p style="margin: 0; color: #2c3e50;">
-              Profitez de <strong>-10%</strong> sur votre prochaine location avec le code : <strong style="color: #27ae60;">FIDELE10</strong>
+          <div style="background-color: #fff3e0; padding: 15px; border-radius: 5px; border-left: 4px solid #ff9800; margin: 20px 0;">
+            <h4 style="color: #e65100; margin-top: 0;">🎁 Offre spéciale fidélité</h4>
+            <p style="color: #e65100; margin: 0;">
+              <strong>Code promo:</strong> <code style="background-color: #f5f5f5; padding: 2px 6px; border-radius: 3px;">FIDELE10</code><br>
+              <em>10% de réduction sur votre prochaine location !</em>
             </p>
-          </div>
-
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.FRONTEND_URL}/vehicles" 
-               style="display: inline-block; background-color: #3498db; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">
-              Réserver à nouveau
-            </a>
           </div>
 
           <div style="margin-top: 30px; padding: 15px; background-color: #ecf0f1; border-radius: 5px;">
             <p style="margin: 0; color: #34495e;">
-              Besoin d'aide ? Contactez-nous :<br>
-              📧 Email : ${process.env.ADMIN_EMAIL}<br>
-              📞 Téléphone : +33 X XX XX XX XX
+              Merci de votre confiance ! Pour toute question:<br>
+              📧 Email: ${process.env.ADMIN_EMAIL || 'fofanaissouf179@gmail.com'}<br>
+              📞 Téléphone: +33 X XX XX XX XX
             </p>
           </div>
 
           <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
           
           <p style="color: #7f8c8d; font-size: 12px; text-align: center;">
-            Au plaisir de vous revoir bientôt !<br>
-            L'équipe GBA Location
+            Cet email a été envoyé automatiquement par le système GBA Location.
           </p>
         </div>
       `,
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Email récapitulatif de fin de location envoyé:', info.messageId);
-    
-    return {
-      success: true,
-      messageId: info.messageId,
-      message: 'Email récapitulatif envoyé avec succès',
-    };
+    return await sendEmail(emailData);
+
   } catch (error) {
-    console.error('❌ Erreur lors de l\'envoi du récapitulatif:', error);
-    throw new Error(`Échec de l'envoi du récapitulatif: ${error.message}`);
+    console.error('❌ Erreur lors de l\'envoi du récapitulatif de location:', error);
+    throw error;
   }
 };
 
 /**
- * Teste la configuration du service email
- * @returns {Promise<Boolean>} True si la configuration est valide
+ * Teste la configuration email SendGrid
+ * @returns {Promise<Object>} Résultat du test
  */
 export const testEmailConfiguration = async () => {
   try {
-    const transporter = createTransporter();
-    await transporter.verify();
-    console.log('✅ Configuration email valide');
-    return true;
+    console.log('🧪 Test de configuration SendGrid...');
+
+    if (!process.env.SENDGRID_API_KEY) {
+      throw new Error('SENDGRID_API_KEY non configurée');
+    }
+
+    if (!process.env.EMAIL_USER) {
+      throw new Error('EMAIL_USER non configurée');
+    }
+
+    // Test simple
+    const testEmail = {
+      to: process.env.ADMIN_EMAIL || 'fofanaissouf179@gmail.com',
+      subject: '🧪 Test SendGrid - GBA Location',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2 style="color: #27ae60;">✅ Test SendGrid réussi !</h2>
+          <p>Si vous recevez cet email, la configuration SendGrid fonctionne parfaitement.</p>
+          <p><strong>Date:</strong> ${new Date().toLocaleString('fr-FR')}</p>
+          <p><strong>From:</strong> ${process.env.EMAIL_USER}</p>
+          <hr>
+          <p style="color: #7f8c8d; font-size: 12px;">Test automatique - GBA Location</p>
+        </div>
+      `,
+    };
+
+    const result = await sendEmail(testEmail);
+    
+    console.log('✅ Configuration SendGrid validée avec succès');
+    return {
+      success: true,
+      message: 'Configuration SendGrid opérationnelle',
+      result
+    };
+
   } catch (error) {
-    console.error('❌ Configuration email invalide:', error);
-    return false;
+    console.error('❌ Échec du test SendGrid:', error.message);
+    return {
+      success: false,
+      message: 'Échec de la configuration SendGrid',
+      error: error.message
+    };
   }
 };
