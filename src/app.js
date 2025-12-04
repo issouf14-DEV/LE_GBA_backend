@@ -20,9 +20,26 @@ app.use("/api/stripe", webhookRoutes);
 app.use(express.json());
 app.use(morgan("dev"));
 
-// Configuration CORS dynamique
+// Configuration CORS dynamique - Support multiple origins
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://legba-frontend-production.up.railway.app',
+  process.env.FRONTEND_URL
+].filter(Boolean);
+
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || "*",
+  origin: (origin, callback) => {
+    // Autoriser les requêtes sans origine (Postman, curl, etc.)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn(`⚠️ CORS blocked: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   optionsSuccessStatus: 200
 };
