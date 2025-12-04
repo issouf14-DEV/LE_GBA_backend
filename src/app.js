@@ -24,7 +24,9 @@ app.use(morgan("dev"));
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
+  'http://localhost:5174',
   'https://legba-frontend-production.up.railway.app',
+  'https://le-gba-frontend.up.railway.app',
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
@@ -33,10 +35,15 @@ const corsOptions = {
     // Autoriser les requêtes sans origine (Postman, curl, etc.)
     if (!origin) return callback(null, true);
     
+    // Log pour debug
+    console.log(`🔍 CORS request from: ${origin}`);
+    
     if (allowedOrigins.includes(origin)) {
+      console.log(`✅ CORS allowed: ${origin}`);
       callback(null, true);
     } else {
       console.warn(`⚠️ CORS blocked: ${origin}`);
+      console.log(`Allowed origins:`, allowedOrigins);
       callback(new Error('Not allowed by CORS'));
     }
   },
