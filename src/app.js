@@ -20,25 +20,33 @@ app.use("/api/stripe", webhookRoutes);
 app.use(express.json());
 app.use(morgan("dev"));
 
-// Configuration CORS dynamique - Support multiple origins
+// Configuration CORS dynamique - Support ALL Railway origins + local
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'http://localhost:5174',
-  'https://legba-frontend-production.up.railway.app',
-  'https://le-gba-frontend.up.railway.app',
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
+// Fonction pour vérifier si l'origine est autorisée
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  
+  // Autoriser toutes les URLs Railway
+  if (origin.includes('.railway.app')) {
+    return true;
+  }
+  
+  // Autoriser les origines dans la liste
+  return allowedOrigins.includes(origin);
+};
+
 const corsOptions = {
   origin: (origin, callback) => {
-    // Autoriser les requêtes sans origine (Postman, curl, etc.)
-    if (!origin) return callback(null, true);
-    
     // Log pour debug
     console.log(`🔍 CORS request from: ${origin}`);
     
-    if (allowedOrigins.includes(origin)) {
+    if (isAllowedOrigin(origin)) {
       console.log(`✅ CORS allowed: ${origin}`);
       callback(null, true);
     } else {
