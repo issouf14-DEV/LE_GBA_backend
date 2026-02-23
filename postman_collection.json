@@ -1,0 +1,132 @@
+{
+  "info": {
+    "name": "GBA Email API Tests",
+    "description": "Collection de tests pour les endpoints d'envoi d'emails",
+    "version": "1.0.0"
+  },
+  "item": [
+    {
+      "name": "1. Notification Admin - Nouvelle Commande",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer YOUR_USER_TOKEN",
+            "description": "Token JWT de l'utilisateur"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderId\": \"674c8e1234567890abcdef12\",\n  \"customerName\": \"Jean Dupont\",\n  \"customerEmail\": \"jean.dupont@example.com\",\n  \"customerPhone\": \"+33 6 12 34 56 78\",\n  \"vehicleMake\": \"Toyota\",\n  \"vehicleModel\": \"Camry\",\n  \"vehicleYear\": \"2023\",\n  \"pickupDate\": \"2025-12-15T10:00:00Z\",\n  \"returnDate\": \"2025-12-20T10:00:00Z\",\n  \"totalPrice\": 350\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/notify-admin",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "notify-admin"]
+        }
+      },
+      "response": [
+        {
+          "name": "Success",
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"message\": \"Email de notification envoyé à l'administrateur\",\n  \"result\": {\n    \"success\": true,\n    \"messageId\": \"<abc123@gmail.com>\",\n    \"message\": \"Email envoyé avec succès à l'administrateur\"\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "2. Confirmation Client - Commande Validée",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer YOUR_ADMIN_TOKEN",
+            "description": "Token JWT de l'admin"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"approved\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/:orderId/send-notification",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", ":orderId", "send-notification"],
+          "variable": [
+            {
+              "key": "orderId",
+              "value": "674c8e1234567890abcdef12",
+              "description": "ID de la commande"
+            }
+          ]
+        }
+      },
+      "response": [
+        {
+          "name": "Success",
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"message\": \"Email de confirmation envoyé au client\",\n  \"result\": {\n    \"success\": true,\n    \"messageId\": \"<xyz789@gmail.com>\",\n    \"message\": \"Email de confirmation (approved) envoyé avec succès au client\"\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "3. Confirmation Client - Commande Rejetée",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer YOUR_ADMIN_TOKEN",
+            "description": "Token JWT de l'admin"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"rejected\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/:orderId/send-notification",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", ":orderId", "send-notification"],
+          "variable": [
+            {
+              "key": "orderId",
+              "value": "674c8e1234567890abcdef12",
+              "description": "ID de la commande"
+            }
+          ]
+        }
+      },
+      "response": [
+        {
+          "name": "Success",
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"message\": \"Email de refus envoyé au client\",\n  \"result\": {\n    \"success\": true,\n    \"messageId\": \"<xyz789@gmail.com>\",\n    \"message\": \"Email de confirmation (rejected) envoyé avec succès au client\"\n  }\n}"
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000",
+      "description": "URL de base du backend (local ou Render)"
+    }
+  ]
+}
