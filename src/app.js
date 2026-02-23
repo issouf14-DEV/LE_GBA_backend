@@ -20,17 +20,23 @@ app.use("/api/stripe", webhookRoutes);
 app.use(express.json());
 app.use(morgan("dev"));
 
-// Configuration CORS dynamique - Support ALL Railway origins + local
+// Configuration CORS dynamique - Support Vercel, Railway + local
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'http://localhost:5174',
+  'https://legba-zeta.vercel.app',
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
 // Fonction pour vérifier si l'origine est autorisée
 const isAllowedOrigin = (origin) => {
   if (!origin) return true;
+  
+  // Autoriser toutes les URLs Vercel
+  if (origin.includes('.vercel.app')) {
+    return true;
+  }
   
   // Autoriser toutes les URLs Railway
   if (origin.includes('.railway.app')) {
