@@ -9,37 +9,95 @@ import { importCarsFromVehicleDatabase } from "../services/vehicleDatabaseServic
  */
 export const getDashboardStats = async (req, res) => {
   try {
+    // Comptes de base
     const clientCount = await User.countDocuments({ role: "user" });
     const vehicleCount = await Vehicle.countDocuments();
     const orderCount = await Order.countDocuments();
 
-    // Total des ventes confirmées (= payées)
-    const sales = await Order.aggregate([
+    // Total des ventes confirmées (payées)
+    const paidOrders = await Order.aggregate([
       { $match: { status: "payée" } },
-      { $group: { _id: null, total: { $sum: "$totalPrice" } } },
+      { 
+        $group: { 
+          _id: null, 
+          total: { $sum: "$totalPrice" },
+          count: { $sum: 1 }
+        } 
+      },
     ]);
+
+    // Commandes en attente
+    const pendingOrders = await Order.countDocuments({ status: "en attente" });
 
     // Répartition des commandes par statut
     const orderStatus = await Order.aggregate([
       { $group: { _id: "$status", count: { $sum: 1 } } },
     ]);
 
-    // Stats par marque
+    // Stats par marque de véhicule
     const vehiclesByBrand = await Vehicle.aggregate([
       { $group: { _id: "$brand", count: { $sum: 1 } } },
       { $sort: { count: -1 } },
       { $limit: 10 },
     ]);
 
+    // Revenus des 30 derniers jours
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const recentRevenue = await Order.aggregate([
+      { 
+        $match: { 
+          status: "payée",
+          createdAt: { $gte: thirtyDaysAgo }
+        } 
+      },
+      { $group: { _id: null, total: { $sum: "$totalPrice" } } },
+    ]);
+
+    // Commandes récentes (7 derniers jours)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    
+    const recentOrders = await Order.countDocuments({
+      createdAt: { $gte: sevenDaysAgo }
+    });
+
+    // Nouveaux clients (30 derniers jours)
+    const newClients = await User.countDocuments({
+      role: "user",
+      createdAt: { $gte: thirtyDaysAgo }
+    });
+
+    // Commandes par jour (7 derniers jours)
+    const ordersByDay = await Order.aggregate([
+      { $match: { createdAt: { $gte: sevenDaysAgo } } },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          count: { $sum: 1 },
+          revenue: { $sum: "$totalPrice" }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
     res.json({
       clients: clientCount,
+      newClients,
       vehicles: vehicleCount,
       orders: orderCount,
-      totalSales: sales[0]?.total || 0,
+      recentOrders,
+      pendingOrders,
+      paidOrders: paidOrders[0]?.count || 0,
+      totalSales: paidOrders[0]?.total || 0,
+      recentRevenue: recentRevenue[0]?.total || 0,
       orderStatus,
       vehiclesByBrand,
+      ordersByDay
     });
   } catch (err) {
+    console.error("Erreur getDashboardStats:", err);
     res.status(500).json({ message: err.message });
   }
 };
