@@ -9,8 +9,10 @@ import { importCarsFromVehicleDatabase } from "../services/vehicleDatabaseServic
  */
 export const getDashboardStats = async (req, res) => {
   try {
-    // Comptes de base
+    // Comptes de base - TOUS les utilisateurs
+    const totalUsers = await User.countDocuments();
     const clientCount = await User.countDocuments({ role: "user" });
+    const adminCount = await User.countDocuments({ role: "admin" });
     const vehicleCount = await Vehicle.countDocuments();
     const orderCount = await Order.countDocuments();
 
@@ -83,7 +85,9 @@ export const getDashboardStats = async (req, res) => {
     ]);
 
     res.json({
+      totalUsers,
       clients: clientCount,
+      admins: adminCount,
       newClients,
       vehicles: vehicleCount,
       orders: orderCount,
