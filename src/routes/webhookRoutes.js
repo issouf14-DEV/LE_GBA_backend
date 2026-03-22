@@ -40,35 +40,20 @@ router.post(
           const orderId = paymentIntent.metadata?.orderId;
 
           if (!orderId) {
-            console.log(
-              "⚠️ Pas d'orderId dans les métadonnées - événement de test Stripe CLI"
-            );
-
-            // Pour les tests Stripe CLI, chercher la commande la plus récente "en attente"
-            const recentOrder = await Order.findOne({
-              status: "en attente",
-            }).sort({ createdAt: -1 });
-
-            if (recentOrder) {
-              console.log(`🔄 Commande de test trouvée: ${recentOrder._id}`);
-
-              // Mettre à jour la commande avec le PaymentIntent de test
-              await Order.findByIdAndUpdate(recentOrder._id, {
+            // Essayer de trouver la commande via paymentIntentId
+            const orderByPI = await Order.findOne({ paymentIntentId: paymentIntent.id });
+            if (orderByPI) {
+              await Order.findByIdAndUpdate(orderByPI._id, {
                 status: "payée",
-                paymentIntentId: paymentIntent.id, // Ajouter l'ID du PaymentIntent
                 paymentInfo: {
                   id: paymentIntent.id,
                   status: paymentIntent.status,
-                  receiptUrl:
-                    paymentIntent.charges?.data[0]?.receipt_url || null,
+                  receiptUrl: paymentIntent.charges?.data[0]?.receipt_url || null,
                 },
               });
-
-              console.log(
-                `🟢 Commande ${recentOrder._id} marquée comme payée (test Stripe CLI)`
-              );
+              console.log(`🟢 Commande ${orderByPI._id} trouvée par paymentIntentId et marquée payée`);
             } else {
-              console.log("❌ Aucune commande en attente trouvée pour le test");
+              console.log("⚠️ Pas d'orderId dans les métadonnées et aucune commande correspondante - événement ignoré");
             }
             break;
           }

@@ -4,6 +4,7 @@ import {
   getMyOrders,
   getAllOrders,
   updateOrderStatus,
+  checkOrderStatus,
   notifyAdmin,
   sendCustomerNotification,
   sendPaymentReminder,
@@ -16,6 +17,9 @@ const router = express.Router();
 // Client
 router.post("/", protect, createOrder);
 router.get("/myorders", protect, getMyOrders);
+
+// Commande individuelle (user)
+router.get("/:id", protect, checkOrderStatus);
 
 // Admin
 router.get("/", protect, adminOnly, getAllOrders);
