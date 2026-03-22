@@ -11,14 +11,12 @@ export const protect = async (req, res, next) => {
       token = req.headers.authorization.split(" ")[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       req.user = await User.findById(decoded.id).select("-password");
-      next();
+      return next();
     } catch (err) {
-      res.status(401).json({ message: "Non autorisé, token invalide" });
+      return res.status(401).json({ message: "Non autorisé, token invalide" });
     }
   }
-  if (!token) {
-    res.status(401).json({ message: "Non autorisé, pas de token" });
-  }
+  return res.status(401).json({ message: "Non autorisé, pas de token" });
 };
 
 export const adminOnly = (req, res, next) => {

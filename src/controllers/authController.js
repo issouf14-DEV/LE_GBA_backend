@@ -55,6 +55,18 @@ export const login = async (req, res) => {
  * POST /api/auth/send-welcome-email
  * Envoie manuellement un email de bienvenue (pour tests ou renvoi)
  */
+export const getProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select("-password");
+    if (!user) {
+      return res.status(404).json({ message: "Utilisateur introuvable" });
+    }
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 export const sendManualWelcomeEmail = async (req, res) => {
   try {
     const { name, email } = req.body;

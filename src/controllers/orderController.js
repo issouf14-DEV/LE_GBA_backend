@@ -2,12 +2,13 @@
 import Vehicle from "../models/Vehicle.js";
 import Order from "../models/Order.js";
 import { createPaymentIntent } from "../utils/payment.js";
-import { 
-  sendNewOrderEmail, 
+import {
+  sendNewOrderEmail,
   sendOrderConfirmation,
   sendPaymentReminderEmail,
-  sendRentalSummaryEmail 
+  sendRentalSummaryEmail
 } from "../services/emailService.js";
+import { stripe } from "../config/stripe.js";
 
 export const createOrder = async (req, res) => {
   try {
@@ -99,7 +100,6 @@ export const checkOrderStatus = async (req, res) => {
 
     // Vérifier aussi le statut sur Stripe si nécessaire
     if (order.paymentIntentId) {
-      const stripe = require("../config/stripe.js").stripe;
       const paymentIntent = await stripe.paymentIntents.retrieve(order.paymentIntentId);
       
       console.log("🔍 Vérification Stripe:", {
@@ -138,10 +138,26 @@ export const getMyOrders = async (req, res) => {
 
 export const getAllOrders = async (req, res) => {
   try {
-    const orders = await Order.find()
-      .populate("user")
-      .populate("vehicles.vehicle");
-    res.json(orders);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    const [orders, total] = await Promise.all([
+      Order.find()
+        .populate("user")
+        .populate("vehicles.vehicle")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Order.countDocuments(),
+    ]);
+
+    res.json({
+      orders,
+      page,
+      totalPages: Math.ceil(total / limit),
+      total,
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -252,7 +268,7 @@ export const sendCustomerNotification = async (req, res) => {
       orderId: order._id,
       customerName: order.user.name || order.user.email,
       customerEmail: order.user.email,
-      vehicleMake: vehicle.make || "N/A",
+      vehicleMake: vehicle.brand || "N/A",
       vehicleModel: vehicle.model || "N/A",
       vehicleYear: vehicle.year || "N/A",
       pickupDate: order.createdAt, // Adapter selon votre modèle
@@ -308,7 +324,7 @@ export const sendPaymentReminder = async (req, res) => {
       orderId: order._id,
       customerName: order.user.name || order.user.email,
       customerEmail: order.user.email,
-      vehicleMake: vehicle.make || "N/A",
+      vehicleMake: vehicle.brand || "N/A",
       vehicleModel: vehicle.model || "N/A",
       vehicleYear: vehicle.year || "N/A",
       totalPrice: order.totalPrice,
@@ -372,7 +388,7 @@ export const sendRentalSummary = async (req, res) => {
       orderId: order._id,
       customerName: order.user.name || order.user.email,
       customerEmail: order.user.email,
-      vehicleMake: vehicle.make || "N/A",
+      vehicleMake: vehicle.brand || "N/A",
       vehicleModel: vehicle.model || "N/A",
       vehicleYear: vehicle.year || "N/A",
       startDate: startDate || order.createdAt,
