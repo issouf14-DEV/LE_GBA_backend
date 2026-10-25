@@ -1,99 +1,42 @@
+import cookieParser from "cookie-parser";
 import express from "express";
+import helmet from "helmet";
 import morgan from "morgan";
-import cors from "cors";
-
-import authRoutes from "./routes/authRoutes.js";
-import vehicleRoutes from "./routes/vehicleRoutes.js";
-import orderRoutes from "./routes/orderRoutes.js";
+import { env } from "./config/env.js";
+import { errorHandler, notFound } from "./middlewares/errorMiddleware.js";
+import { apiLimiter } from "./middlewares/rateLimits.js";
+import { corsPolicy, jsonBody, requireAjax, requireProxy } from "./middlewares/security.js";
 import adminRoutes from "./routes/adminRoutes.js";
-import paymentRoutes from "./routes/payment.routes.js";
-import webhookRoutes from "./routes/webhookRoutes.js";
-
-import { notFound, errorHandler } from "./middlewares/errorMiddleware.js";
+import authRoutes from "./routes/authRoutes.js";
+import orderRoutes from "./routes/orderRoutes.js";
+import teamRoutes from "./routes/teamRoutes.js";
+import vehicleRoutes from "./routes/vehicleRoutes.js";
 
 const app = express();
 
-// ⚠️ Webhook Stripe doit être défini AVANT express.json()
-app.use("/api/stripe", webhookRoutes);
+// Derrière Vercel et Northflank : nécessaire pour connaître la vraie IP (limites de requêtes)
+app.set("trust proxy", env.TRUST_PROXY_HOPS);
 
-// --- Middlewares globaux ---
-app.use(express.json());
-app.use(morgan("dev"));
+app.use(helmet());
+app.use(corsPolicy);
+if (env.NODE_ENV !== "test") app.use(morgan(env.NODE_ENV === "production" ? "tiny" : "dev"));
 
-// Configuration CORS dynamique - Support Vercel, Railway + local
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'http://localhost:5174',
-  'https://legba-zeta.vercel.app',
-  process.env.FRONTEND_URL
-].filter(Boolean);
+app.use(cookieParser());
 
-// Fonction pour vérifier si l'origine est autorisée
-const isAllowedOrigin = (origin) => {
-  if (!origin) return true;
-  
-  // Autoriser toutes les URLs Vercel
-  if (origin.includes('.vercel.app')) {
-    return true;
-  }
-  
-  // Autoriser toutes les URLs Railway
-  if (origin.includes('.railway.app')) {
-    return true;
-  }
-  
-  // Autoriser les origines dans la liste
-  return allowedOrigins.includes(origin);
-};
+// Appelé directement par l'hébergeur (Northflank) pour vérifier que le service répond
+app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
-const corsOptions = {
-  origin: (origin, callback) => {
-    // Log pour debug
-    console.log(`🔍 CORS request from: ${origin}`);
-    
-    if (isAllowedOrigin(origin)) {
-      console.log(`✅ CORS allowed: ${origin}`);
-      callback(null, true);
-    } else {
-      console.warn(`⚠️ CORS blocked: ${origin}`);
-      console.log(`Allowed origins:`, allowedOrigins);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  optionsSuccessStatus: 200
-};
-app.use(cors(corsOptions));
-
-// --- Routes principales ---
-app.get("/", (req, res) => {
-  res.json({ 
-    message: "Bienvenue sur l'API GBA 🚗",
-    version: "1.0.0",
-    status: "running",
-    endpoints: {
-      auth: "/api/auth",
-      vehicles: "/api/vehicles",
-      orders: "/api/orders",
-      admin: "/api/admin",
-      payments: "/api/payments"
-    }
-  });
-});
-
-// Health check pour Render
-app.get("/health", (req, res) => {
-  res.status(200).json({ status: "OK", timestamp: new Date().toISOString() });
-});
-
-app.use("/api/auth", authRoutes);
+// Ordre volontaire : proxy, limites et anti-CSRF AVANT toute lecture du corps de la requête
+app.use("/api", requireProxy, apiLimiter, requireAjax);
+// Corps JSON limité à 100 Ko ; les photos de véhicules (3 Mo) sont lues dans leurs routes,
+// seulement après vérification du rôle admin
+const smallJson = jsonBody("100kb");
+app.use("/api/auth", smallJson, authRoutes);
 app.use("/api/vehicles", vehicleRoutes);
-app.use("/api/orders", orderRoutes);
-app.use("/api/admin", adminRoutes);
-app.use("/api/payments", paymentRoutes);
+app.use("/api/orders", smallJson, orderRoutes);
+app.use("/api/admin", smallJson, adminRoutes);
+app.use("/api/team", smallJson, teamRoutes);
 
-// --- Middlewares d’erreurs ---
 app.use(notFound);
 app.use(errorHandler);
 

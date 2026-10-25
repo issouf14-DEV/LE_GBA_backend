@@ -1,37 +1,33 @@
-// routes/vehicleRoutes.js
 import express from "express";
 import {
-  getVehicles,
-  getVehicleById,
   createVehicle,
-  updateVehicle,
   deleteVehicle,
-  searchVehicles,
+  getVehicleById,
+  getVehicleImage,
+  getVehicles,
+  updateVehicle,
 } from "../controllers/vehicleController.js";
-import {
-  importVehicleDatabase,
-  getAdminVehicles,
-  clearAllVehicles,
-  getImportStatus,
-} from "../controllers/adminController.js";
-import { protect, adminOnly } from "../middlewares/authMiddleware.js";
+import { authorize, protect } from "../middlewares/auth.js";
+import { jsonBody } from "../middlewares/security.js";
+import { validate } from "../middlewares/validate.js";
+import { idParam } from "../schemas/common.js";
+import { vehicleQuery, vehicleSchema } from "../schemas/vehicle.js";
 
 const router = express.Router();
+const withId = validate(idParam, "params");
+// Gestion du catalogue : permission vehicles.manage
+const canManage = authorize("vehicles.manage");
+// Photos en base64 : corps jusqu'à 3 Mo, lu uniquement pour un admin authentifié
+const photoJson = jsonBody("3mb");
 
-// 🚗 Recherche doit venir AVANT /:id
-router.get("/search", searchVehicles);
+// Public
+router.get("/", validate(vehicleQuery, "query"), getVehicles);
+router.get("/:id", withId, getVehicleById);
+router.get("/:id/image", withId, getVehicleImage);
 
-// 🔧 Routes admin pour la gestion des véhicules (protection admin)
-router.get("/admin/all", protect, adminOnly, getAdminVehicles); // Voir tous les véhicules (admin)
-router.get("/admin/status", protect, adminOnly, getImportStatus); // Statut de l'importation
-router.post("/admin/import", protect, adminOnly, importVehicleDatabase); // Importer les véhicules
-router.delete("/admin/clear", protect, adminOnly, clearAllVehicles); // Vider la base
-
-// 📋 CRUD véhicules standard
-router.get("/", getVehicles); // Voir véhicules (public)
-router.get("/:id", getVehicleById); // Voir un véhicule (public)
-router.post("/", protect, adminOnly, createVehicle); // Créer véhicule (admin)
-router.put("/:id", protect, adminOnly, updateVehicle); // Modifier véhicule (admin)
-router.delete("/:id", protect, adminOnly, deleteVehicle); // Supprimer véhicule (admin)
+// Administration
+router.post("/", protect, canManage, photoJson, validate(vehicleSchema), createVehicle);
+router.put("/:id", protect, canManage, withId, photoJson, validate(vehicleSchema), updateVehicle);
+router.delete("/:id", protect, canManage, withId, deleteVehicle);
 
 export default router;

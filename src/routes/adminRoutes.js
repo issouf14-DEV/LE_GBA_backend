@@ -1,35 +1,33 @@
-// routes/adminRoutes.js
 import express from "express";
+import { getStats } from "../controllers/adminController.js";
 import {
-  getDashboardStats,
-  getAllUsers,
-  deleteUser,
-  updateUser,
-  importVehicleDatabase,
-  getAdminVehicles,
-  clearAllVehicles,
-  getImportStatus,
-} from "../controllers/adminController.js";
-import { protect, adminOnly } from "../middlewares/authMiddleware.js";
+  deleteClient,
+  inviteClient,
+  listClients,
+  updateClientStatus,
+} from "../controllers/clientController.js";
+import { authorize, protect } from "../middlewares/auth.js";
+import { validate } from "../middlewares/validate.js";
+import { idParam } from "../schemas/common.js";
+import { accountStatusSchema, clientListQuery, inviteClientSchema } from "../schemas/team.js";
 
 const router = express.Router();
+const withId = validate(idParam, "params");
 
-// 🔒 Toutes les routes admin nécessitent une authentification admin
+// Chaque route exige une permission précise, relue en base à chaque requête
 router.use(protect);
-router.use(adminOnly);
 
-// 📊 Dashboard & Stats
-router.get("/dashboard", getDashboardStats);
+router.get("/stats", authorize("stats.read"), getStats);
 
-// 👤 Gestion des utilisateurs
-router.get("/users", getAllUsers);
-router.put("/users/:id", updateUser);
-router.delete("/users/:id", deleteUser);
-
-// 🚗 Gestion des véhicules
-router.get("/vehicles", getAdminVehicles); // Voir tous les véhicules
-router.get("/vehicles/status", getImportStatus); // Statut de l'importation
-router.post("/vehicles/import", importVehicleDatabase); // Importer les véhicules
-router.delete("/vehicles/clear", clearAllVehicles); // Vider la base
+router.get("/clients", authorize("clients.read"), validate(clientListQuery, "query"), listClients);
+router.post("/clients", authorize("clients.manage"), validate(inviteClientSchema), inviteClient);
+router.patch(
+  "/clients/:id/status",
+  authorize("clients.manage"),
+  withId,
+  validate(accountStatusSchema),
+  updateClientStatus
+);
+router.delete("/clients/:id", authorize("clients.manage"), withId, deleteClient);
 
 export default router;

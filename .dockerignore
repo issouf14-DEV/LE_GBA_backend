@@ -1,0 +1,16 @@
+# Rien de sensible ni d'inutile dans l'image de production
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+.vscode
+node_modules
+tests
+coverage
+*.log
+README.md
+biome.json
+vitest.config.js
+Dockerfile
+.dockerignore

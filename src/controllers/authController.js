@@ -1,91 +1,101 @@
-import User from "../models/User.js";
-import jwt from "jsonwebtoken";
-import { sendWelcomeEmail } from "../services/emailService.js";
+import bcrypt from "bcryptjs";
+import { clearSessionCookies, REFRESH_COOKIE, setSessionCookies } from "../config/cookies.js";
+import { httpError } from "../middlewares/errorMiddleware.js";
+import User, { BCRYPT_COST } from "../models/User.js";
+import { isCompromisedPassword } from "../schemas/common.js";
+import { sendWelcomeEmail } from "../services/email/index.js";
+import {
+  issueSession,
+  revokeRefreshToken,
+  rotateRefreshToken,
+  signAccessToken,
+} from "../services/tokens.js";
 
-const generateToken = (id, role) => {
-  return jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: "30d" });
-};
+// Hash factice : la vérification dure aussi longtemps qu'un compte existe ou non
+// (on ne peut pas deviner les emails inscrits en mesurant le temps de réponse)
+const DUMMY_HASH = bcrypt.hashSync("compte-inexistant", 12);
+const INVALID_LOGIN = "Email ou mot de passe incorrect";
+const TOO_MANY = "Trop de tentatives. Réessayez dans 15 minutes.";
 
-export const register = async (req, res) => {
-  try {
-    const { name, email, password } = req.body;
-    const exist = await User.findOne({ email });
-    if (exist) return res.status(400).json({ message: "Email déjà utilisé" });
+async function startSession(res, user, status = 200) {
+  setSessionCookies(res, await issueSession(user));
+  res.status(status).json(user.toPublic());
+}
 
-    const user = await User.create({ name, email, password });
-    
-    // Envoyer l'email de bienvenue (non-bloquant)
-    sendWelcomeEmail({ name: user.name, email: user.email })
-      .then(() => console.log('✅ Email de bienvenue envoyé à', email))
-      .catch(err => console.error('❌ Erreur email de bienvenue:', err.message));
-
-    res.status(201).json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      token: generateToken(user._id, user.role),
-    });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+export async function register(req, res) {
+  if (await User.exists({ email: req.body.email })) {
+    throw httpError(409, "Un compte existe déjà avec cet email");
   }
-};
+  const user = await User.create({ ...req.body, role: "client" });
+  sendWelcomeEmail(user);
+  await startSession(res, user, 201);
+}
 
-export const login = async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email });
-    if (user && (await user.matchPassword(password))) {
-      res.json({
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        token: generateToken(user._id, user.role),
-      });
-    } else {
-      res.status(401).json({ message: "Email ou mot de passe invalide" });
-    }
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+export async function login(req, res) {
+  const user = await User.findOne({ email: req.body.email }).select(
+    "+password +failedLogins +lockUntil +lastFailedLogin"
+  );
+  if (!user) {
+    await bcrypt.compare(req.body.password, DUMMY_HASH);
+    throw httpError(401, INVALID_LOGIN);
   }
-};
-
-/**
- * POST /api/auth/send-welcome-email
- * Envoie manuellement un email de bienvenue (pour tests ou renvoi)
- */
-export const getProfile = async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id).select("-password");
-    if (!user) {
-      return res.status(404).json({ message: "Utilisateur introuvable" });
-    }
-    res.json(user);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+  // Compte verrouillé : même message et même durée de calcul qu'une limite atteinte
+  if (user.isLocked()) {
+    await bcrypt.compare(req.body.password, DUMMY_HASH);
+    throw httpError(429, TOO_MANY);
   }
-};
 
-export const sendManualWelcomeEmail = async (req, res) => {
-  try {
-    const { name, email } = req.body;
-
-    if (!name || !email) {
-      return res.status(400).json({ message: "Nom et email requis" });
-    }
-
-    const result = await sendWelcomeEmail({ name, email });
-
-    res.status(200).json({
-      message: "Email de bienvenue envoyé avec succès",
-      result,
-    });
-  } catch (err) {
-    console.error("❌ Erreur lors de l'envoi de l'email de bienvenue:", err);
-    res.status(500).json({ 
-      message: "Échec de l'envoi de l'email de bienvenue",
-      error: err.message 
-    });
+  if (!(await user.matchPassword(req.body.password))) {
+    await user.registerFailedLogin();
+    throw httpError(401, INVALID_LOGIN);
   }
-};
+  await user.clearFailedLogins();
+  // Ancien mot de passe chiffré avec un coût plus faible (ancienne version) : re-chiffré
+  if (bcrypt.getRounds(user.password) < BCRYPT_COST) {
+    const stronger = await bcrypt.hash(req.body.password, BCRYPT_COST);
+    await User.updateOne({ _id: user._id }, { password: stronger });
+  }
+  // Compte désactivé par l'équipe : annoncé seulement à qui connaît le bon mot de passe
+  if (user.disabledAt) throw httpError(403, "Ce compte est désactivé. Contactez LE-GBA.");
+  // Mot de passe connu des pirates : pas de session, l'utilisateur doit le réinitialiser
+  if (isCompromisedPassword(req.body.password)) {
+    throw httpError(
+      403,
+      "Ce mot de passe n'est plus sûr. Utilisez « Mot de passe oublié » pour en choisir un nouveau."
+    );
+  }
+  await startSession(res, user);
+}
+
+export async function logout(req, res) {
+  await revokeRefreshToken(req.cookies?.[REFRESH_COOKIE]);
+  clearSessionCookies(res);
+  res.status(204).end();
+}
+
+// Renouvelle le jeton d'accès (15 min) grâce au jeton de renouvellement (usage unique)
+export async function refresh(req, res) {
+  const rotated = await rotateRefreshToken(req.cookies?.[REFRESH_COOKIE]);
+  const user = rotated && (await User.findById(rotated.userId));
+  if (!user || user.disabledAt) {
+    clearSessionCookies(res);
+    throw httpError(401, "Session expirée");
+  }
+  // Renouvellement déjà fait à l'instant par un autre onglet : ses cookies sont déjà en place
+  if (rotated.concurrent) return res.status(204).end();
+  setSessionCookies(res, {
+    accessToken: signAccessToken(user, rotated.family),
+    refreshToken: rotated.refreshToken,
+  });
+  res.status(204).end();
+}
+
+export function getProfile(req, res) {
+  res.json(req.user.toPublic());
+}
+
+export async function updateProfile(req, res) {
+  Object.assign(req.user, req.body);
+  await req.user.save();
+  res.json(req.user.toPublic());
+}

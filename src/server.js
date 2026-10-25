@@ -1,56 +1,45 @@
-import dotenv from "dotenv";
 import app from "./app.js";
 import connectDB from "./config/db.js";
+import { env } from "./config/env.js";
 import User from "./models/User.js";
-import bcrypt from "bcryptjs";
-// import { importCarsFromVehicleDatabase } from "./services/vehicleDatabaseService.js"; // ✅ ajoute ton service
+import { strongPassword } from "./schemas/common.js";
+import { expireStalePending } from "./services/orderStatus.js";
 
-dotenv.config();
-const PORT = process.env.PORT || 5000;
+// Crée le superadmin à partir des variables d'environnement, s'il n'existe pas encore.
+// Seul moyen d'obtenir ce rôle : aucune route de l'API ne peut le créer ni l'attribuer
+async function ensureAdmin() {
+  if (!env.ADMIN_EMAIL || !env.ADMIN_PASSWORD) return;
+  if (await User.exists({ email: env.ADMIN_EMAIL.toLowerCase() })) return;
 
-// Connexion à la DB
-connectDB();
-
-const createAdmin = async () => {
-  try {
-    const adminExist = await User.findOne({ email: process.env.ADMIN_EMAIL });
-    if (!adminExist) {
-      const admin = new User({
-        name: process.env.ADMIN_NAME,
-        email: process.env.ADMIN_EMAIL,
-        password: process.env.ADMIN_PASSWORD,
-        role: "admin",
-      });
-      await admin.save(); // ⚠️ Save déclenche le hash bcrypt
-      console.log("✅ Admin créé");
-    }
-  } catch (error) {
-    console.error("❌ Erreur création admin :", error.message);
+  if (!strongPassword.safeParse(env.ADMIN_PASSWORD).success) {
+    console.error(
+      "ADMIN_PASSWORD trop faible : 8 caractères min. avec lettres et chiffres. Admin non créé."
+    );
+    return;
   }
-};
+  await User.create({
+    name: env.ADMIN_NAME || "Administrateur",
+    email: env.ADMIN_EMAIL,
+    password: env.ADMIN_PASSWORD,
+    role: "superadmin",
+  });
+  console.log("Compte super-administrateur créé");
+}
 
-// ⚡ Importer les véhicules automatiquement
-// const importVehicles = async () => {
-//   try {
-//     const result = await importCarsFromVehicleDatabase();
-//     console.log(`🚗 Import terminé : ${result.imported} véhicules`);
-//   } catch (error) {
-//     console.error("❌ Erreur import véhicules :", error.message);
-//   }
-// };
+await connectDB();
+await ensureAdmin();
 
-// Exécution au démarrage
-(async () => {
-  try {
-    await createAdmin();
-    // await importVehicles();
-    
-    app.listen(PORT, () => {
-      console.log(`🚀 Serveur lancé sur le port ${PORT}`);
-      console.log(`🌍 Environnement: ${process.env.NODE_ENV || 'development'}`);
-    });
-  } catch (error) {
-    console.error("❌ Erreur au démarrage du serveur:", error.message);
-    process.exit(1);
-  }
-})();
+// Demandes de réservation sans réponse depuis 48 h : annulées au démarrage puis toutes les heures
+const expire = () =>
+  expireStalePending()
+    .then((count) => count && console.log(`${count} réservation(s) en attente expirée(s)`))
+    .catch((error) => console.error("Expiration des réservations :", error.message));
+expire();
+setInterval(expire, 60 * 60 * 1000).unref();
+
+const server = app.listen(env.PORT, () => {
+  console.log(`API démarrée sur le port ${env.PORT} (${env.NODE_ENV})`);
+});
+
+// Arrêt propre (redéploiement sur Northflank)
+process.on("SIGTERM", () => server.close(() => process.exit(0)));

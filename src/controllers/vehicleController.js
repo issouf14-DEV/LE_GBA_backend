@@ -1,148 +1,102 @@
+import mongoose from "mongoose";
+import { httpError } from "../middlewares/errorMiddleware.js";
+import Order from "../models/Order.js";
 import Vehicle from "../models/Vehicle.js";
+import {
+  PUBLIC_FIELDS,
+  toNewVehicle,
+  toPublicVehicle,
+  toVehicleUpdate,
+} from "../services/vehicles.js";
+import { escapeRegex } from "../utils/escape.js";
 
-// [Client + Admin] Voir tous les véhicules (avec pagination + tri)
-export const getVehicles = async (req, res) => {
-  try {
-    const {
-      minPrice,
-      maxPrice,
-      year,
-      brand,
-      sort,
-      page = 1,
-      limit = 10,
-    } = req.query;
+const SORTS = {
+  priceAsc: { price: 1 },
+  priceDesc: { price: -1 },
+  yearAsc: { year: 1 },
+  yearDesc: { year: -1 },
+  recent: { createdAt: -1 },
+};
 
-    let query = {};
-
-    if (minPrice || maxPrice) {
-      query.price = {};
-      if (minPrice) query.price.$gte = Number(minPrice);
-      if (maxPrice) query.price.$lte = Number(maxPrice);
-    }
-
-    if (year) query.year = Number(year);
-    if (brand) query.brand = { $regex: brand, $options: "i" };
-
-    // Pagination
-    const skip = (page - 1) * limit;
-
-    let vehicles = Vehicle.find(query).skip(skip).limit(Number(limit));
-
-    // Tri
-    if (sort) {
-      if (sort === "priceAsc") vehicles = vehicles.sort({ price: 1 });
-      if (sort === "priceDesc") vehicles = vehicles.sort({ price: -1 });
-      if (sort === "yearAsc") vehicles = vehicles.sort({ year: 1 });
-      if (sort === "yearDesc") vehicles = vehicles.sort({ year: -1 });
-    }
-
-    // Exécuter la requête
-    const results = await vehicles.select(
-      "brand model year price image photos vin"
-    );
-
-    // Compter le total pour la pagination
-    const total = await Vehicle.countDocuments(query);
-
-    res.json({
-      total,
-      page: Number(page),
-      limit: Number(limit),
-      vehicles: results,
+export async function getVehicles(req, res) {
+  const { page, limit, type, brand, minPrice, maxPrice, sort } = req.validated.query;
+  const filter = {};
+  if (type) filter.type = type;
+  // Texte saisi échappé : aucune expression régulière piégée (ReDoS) ne peut être injectée
+  if (brand) filter.brand = new RegExp(escapeRegex(brand), "i");
+  if (minPrice !== undefined || maxPrice !== undefined) {
+    // Opérateurs construits par le serveur : marqués « de confiance » pour sanitizeFilter
+    filter.price = mongoose.trusted({
+      ...(minPrice !== undefined ? { $gte: minPrice } : {}),
+      ...(maxPrice !== undefined ? { $lte: maxPrice } : {}),
     });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
   }
-};
 
-// [Client + Admin] Voir un véhicule par ID
-export const getVehicleById = async (req, res) => {
-  try {
-    const vehicle = await Vehicle.findById(req.params.id);
-    if (!vehicle)
-      return res.status(404).json({ message: "Véhicule introuvable" });
-    res.json(vehicle);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+  const [vehicles, total] = await Promise.all([
+    Vehicle.find(filter)
+      .select(PUBLIC_FIELDS)
+      .sort(SORTS[sort])
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean(),
+    Vehicle.countDocuments(filter),
+  ]);
+  res.json({ vehicles: vehicles.map(toPublicVehicle), total, page, limit });
+}
 
-// [Admin] Ajouter un véhicule
-export const createVehicle = async (req, res) => {
-  try {
-    const { brand, model, year, price, image, photos, vin } = req.body;
+export async function getVehicleById(req, res) {
+  const vehicle = await Vehicle.findById(req.validated.params.id).select(PUBLIC_FIELDS).lean();
+  if (!vehicle) throw httpError(404, "Véhicule introuvable");
+  res.json(toPublicVehicle(vehicle));
+}
 
-    const vehicle = await Vehicle.create({
-      brand,
-      model,
-      year,
-      price,
-      image,
-      photos,
-      vin,
-    });
+// Photo enregistrée depuis l'administration, servie comme une vraie image (mise en cache)
+export async function getVehicleImage(req, res) {
+  const vehicle = await Vehicle.findById(req.validated.params.id)
+    .select("+imageData +imageType")
+    .lean();
+  if (!vehicle?.imageData || !vehicle.imageType) throw httpError(404, "Image introuvable");
+  res
+    .type(vehicle.imageType)
+    .set("Cache-Control", "public, max-age=31536000, immutable")
+    .send(Buffer.from(vehicle.imageData, "base64"));
+}
 
-    res.status(201).json(vehicle);
-  } catch (err) {
-    res.status(400).json({ message: err.message });
-  }
-};
+// Admin : req.body a déjà été réduit par Zod aux seuls champs autorisés
+export async function createVehicle(req, res) {
+  const vehicle = await Vehicle.create(toNewVehicle(req.body));
+  res.status(201).json(toPublicVehicle(vehicle));
+}
 
-// [Admin] Modifier un véhicule
-export const updateVehicle = async (req, res) => {
-  try {
-    const { brand, model, year, price, image, photos, vin } = req.body;
-
-    const vehicle = await Vehicle.findByIdAndUpdate(
-      req.params.id,
-      { brand, model, year, price, image, photos, vin },
-      { new: true }
-    );
-
-    if (!vehicle)
-      return res.status(404).json({ message: "Véhicule introuvable" });
-    res.json(vehicle);
-  } catch (err) {
-    res.status(400).json({ message: err.message });
-  }
-};
-
-// [Client + Admin] Rechercher véhicules (par modèle, marque, année)
-export const searchVehicles = async (req, res) => {
-  try {
-    const { q } = req.query;
-
-    let query;
-    if (isNaN(q)) {
-      query = {
-        $or: [
-          { model: { $regex: q, $options: "i" } },
-          { brand: { $regex: q, $options: "i" } },
-        ],
-      };
-    } else {
-      query = { year: Number(q) };
+export async function updateVehicle(req, res) {
+  const vehicle = await Vehicle.findByIdAndUpdate(
+    req.validated.params.id,
+    toVehicleUpdate(req.body),
+    {
+      new: true,
+      runValidators: true,
     }
+  )
+    .select(PUBLIC_FIELDS)
+    .lean();
+  if (!vehicle) throw httpError(404, "Véhicule introuvable");
+  res.json(toPublicVehicle(vehicle));
+}
 
-    const vehicles = await Vehicle.find(query).select(
-      "brand model year price image photos vin"
+// Un véhicule réservé ne peut pas être supprimé (les réservations en cours le référencent)
+export async function deleteVehicle(req, res) {
+  const { id } = req.validated.params;
+  const active = await Order.exists({
+    vehicle: id,
+    status: mongoose.trusted({ $in: ["en_attente", "validee"] }),
+  });
+  if (active) {
+    throw httpError(
+      409,
+      "Ce véhicule a des réservations en cours : rendez-le indisponible à la place"
     );
-
-    res.json(vehicles);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
   }
-};
-
-// [Admin] Supprimer un véhicule
-export const deleteVehicle = async (req, res) => {
-  try {
-    const vehicle = await Vehicle.findByIdAndDelete(req.params.id);
-    if (!vehicle)
-      return res.status(404).json({ message: "Véhicule introuvable" });
-    res.json({ message: "Véhicule supprimé" });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+  const vehicle = await Vehicle.findByIdAndDelete(id);
+  if (!vehicle) throw httpError(404, "Véhicule introuvable");
+  res.status(204).end();
+}

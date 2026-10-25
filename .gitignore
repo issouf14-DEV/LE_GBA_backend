@@ -4,9 +4,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Env files
+# Env files (le modèle .env.example, sans secret, est versionné)
 .env
-.env.example
+.env.*
+!.env.example
 
 # Logs
 logs

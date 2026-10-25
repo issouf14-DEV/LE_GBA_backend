@@ -1,14 +1,16 @@
 import mongoose from "mongoose";
+import { env } from "./env.js";
 
-const GBA_DB = async () => {
+// Refuse les opérateurs MongoDB ($gt, $ne…) cachés dans les filtres : bloque l'injection NoSQL
+mongoose.set("sanitizeFilter", true);
+mongoose.set("strictQuery", true);
+
+export default async function connectDB(uri = env.MONGO_URI) {
   try {
-    await mongoose.connect(process.env.MONGO_URI);
-
-    console.log(`✅ MongoDB connecté : ${mongoose.connection.host}`);
+    await mongoose.connect(uri);
+    console.log("MongoDB connecté");
   } catch (error) {
-    console.error("❌ Erreur connexion DB:", error.message);
-    process.exit(1); // Arrête le serveur si la DB ne se connecte pas
+    console.error("Connexion MongoDB impossible :", error.message);
+    process.exit(1);
   }
-};
-
-export default GBA_DB;
+}
