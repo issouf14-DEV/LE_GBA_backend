@@ -1,23 +1,8 @@
 import { z } from "zod";
-import { OWN_IMAGE } from "../services/vehicles.js";
-import { name, optionalText } from "./common.js";
+import { VEHICLE_TYPES } from "../models/Vehicle.js";
+import { name, objectId, optionalText } from "./common.js";
 
 const CURRENT_YEAR = new Date().getFullYear();
-const MAX_IMAGE_LENGTH = 2_900_000; // ~2 Mo une fois encodé en base64
-
-const image = z
-  .string()
-  .trim()
-  .max(MAX_IMAGE_LENGTH, "Image trop lourde (2 Mo maximum)")
-  .refine(
-    (value) =>
-      !value ||
-      OWN_IMAGE.test(value) ||
-      /^(https:\/\/[^\s"'<>]+|data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+)$/.test(value),
-    "Image invalide (URL https ou fichier JPEG/PNG/WebP)"
-  )
-  .default("");
-
 export const vehicleSchema = z.strictObject({
   brand: name("La marque", 50),
   model: name("Le modèle", 80),
@@ -27,7 +12,10 @@ export const vehicleSchema = z.strictObject({
     .int()
     .min(1950)
     .max(CURRENT_YEAR + 1),
-  type: z.enum(["thermal", "electric", "hybrid"]),
+  // Catégorie obligatoire
+  type: z.enum(VEHICLE_TYPES, {
+    message: "Choisissez la catégorie : thermique, électrique ou hybride",
+  }),
   fuel: optionalText(30),
   transmission: optionalText(30),
   power: optionalText(30),
@@ -49,13 +37,24 @@ export const vehicleSchema = z.strictObject({
     .max(10)
     .default([]),
   description: optionalText(1000),
-  image,
 });
+
+// Photo envoyée par l'équipe (déjà compressée par le navigateur) : contenu vérifié par le serveur
+// (2 Mo maximum une fois décodée, soit environ 2,8 millions de caractères en base64)
+export const photoSchema = z.strictObject({
+  image: z.string().max(2_900_000, "Image trop lourde (2 Mo maximum)"),
+});
+
+export const photoOrderSchema = z.strictObject({
+  order: z.array(objectId).max(8),
+});
+
+export const photoParams = z.object({ id: objectId, photoId: objectId });
 
 export const vehicleQuery = z.object({
   page: z.coerce.number().int().min(1).max(1000).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
-  type: z.enum(["thermal", "electric", "hybrid"]).optional(),
+  type: z.enum(VEHICLE_TYPES).optional(),
   brand: z.string().trim().max(50).optional(),
   minPrice: z.coerce.number().min(0).optional(),
   maxPrice: z.coerce.number().min(0).optional(),

@@ -15,6 +15,6 @@ export const sendInvitationEmail = (user, token) =>
     subject: "Votre compte LE-GBA : choisissez votre mot de passe",
     html: layout(
       `Bienvenue ${user.name}`,
-      `<p>${escapeHtml(ROLE_TEXT[user.role] || ROLE_TEXT.client)}</p><p>Pour activer votre compte, choisissez votre mot de passe. Ce lien est valable 72 heures et ne sert qu'une fois.</p>${button("Choisir mon mot de passe", `/reset-password#${token}`)}`
+      `<p>${escapeHtml(ROLE_TEXT[user.role] || ROLE_TEXT.client)}</p><p>Pour activer votre compte, choisissez votre mot de passe. Ce lien est valable 72 heures et ne sert qu'une fois.</p>${button("Choisir mon mot de passe", `/activate#${token}`)}`
     ),
   });

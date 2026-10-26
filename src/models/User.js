@@ -7,6 +7,7 @@ import {
   ROLES,
 } from "../config/permissions.js";
 import { applySecurityMethods, BCRYPT_COST } from "./userSecurity.js";
+import { verificationFields } from "./userVerification.js";
 
 export { BCRYPT_COST };
 
@@ -41,11 +42,17 @@ const userSchema = new mongoose.Schema(
     // Incrémenté à chaque changement de mot de passe : tous les jetons d'accès émis avant
     // portent l'ancien numéro et sont refusés immédiatement
     tokenVersion: { type: Number, default: 0 },
-    resetPasswordHash: { type: String, select: false },
-    resetPasswordExpires: { type: Date, select: false },
+    // Mot de passe oublié : empreinte du code envoyé par email, expiration, essais
+    resetCodeHash: { type: String, select: false },
+    resetCodeExpires: { type: Date, select: false },
+    resetAttempts: { type: Number, default: 0, select: false },
+    // Invitation (compte créé par l'équipe) : empreinte du jeton du lien, expiration
+    inviteHash: { type: String, select: false },
+    inviteExpires: { type: Date, select: false },
     failedLogins: { type: Number, default: 0, select: false },
     lockUntil: { type: Date, select: false },
     lastFailedLogin: { type: Date, select: false },
+    ...verificationFields,
   },
   { timestamps: true }
 );
@@ -74,6 +81,9 @@ userSchema.methods.toPublic = function toPublic() {
     role: normalizeRole(this.role),
     permissions: effectivePermissions(this),
     disabled: Boolean(this.disabledAt),
+    invitationPending: Boolean(this.passwordSetupRequired),
+    emailVerified: Boolean(this.emailVerifiedAt),
+    mfaEnabled: Boolean(this.mfaEnabledAt),
     createdAt: this.createdAt,
   };
 };

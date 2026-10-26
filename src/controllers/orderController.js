@@ -1,10 +1,14 @@
+import { recordEvent } from "../events/outbox.js";
+import { EVENTS } from "../events/topology.js";
+import { httpError } from "../middlewares/errorMiddleware.js";
 import Order from "../models/Order.js";
+import { audit } from "../services/audit.js";
 import {
-  sendNewOrderToAdmin,
   sendOrderStatusEmail,
   sendPaymentReminderEmail,
   sendRentalSummaryEmail,
 } from "../services/email/index.js";
+import { withOwners } from "../services/orderOwners.js";
 import { changeStatus } from "../services/orderStatus.js";
 import {
   accountEmail,
@@ -37,7 +41,8 @@ export async function createOrder(req, res) {
     notes: req.body.notes,
   });
   await ensureNoDoubleBooking(order);
-  sendNewOrderToAdmin(order);
+  // L'équipe est prévenue par email via le bus (worker) : rien n'est perdu si l'envoi échoue
+  await recordEvent(EVENTS.orderCreated, { orderId: order._id });
   res.status(201).json(serializeOrder(order));
 }
 
@@ -50,14 +55,13 @@ export async function getAllOrders(req, res) {
   const { page, limit } = req.validated.query;
   const [orders, total] = await Promise.all([
     Order.find()
-      .populate("user", "name email")
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit),
     Order.countDocuments(),
   ]);
   res.json({
-    orders: orders.map((order) => serializeOrder(order, { withUser: true })),
+    orders: (await withOwners(orders)).map((order) => serializeOrder(order, { withUser: true })),
     page,
     totalPages: Math.ceil(total / limit),
     total,
@@ -65,9 +69,14 @@ export async function getAllOrders(req, res) {
 }
 
 // Admin : seules les transitions prévues sont acceptées ; le client est prévenu par email
+// (événement écrit avec le statut, envoyé par le worker)
 export async function updateOrderStatus(req, res) {
   const order = await changeStatus(req.validated.params.id, req.body.status);
-  sendOrderStatusEmail(order, await accountEmail(order));
+  await audit(req, "order.status_changed", {
+    targetType: "order",
+    targetId: order._id,
+    meta: { status: order.status },
+  });
   res.json(serializeOrder(order));
 }
 
@@ -80,20 +89,31 @@ export async function cancelMyOrder(req, res) {
   res.json(serializeOrder(order));
 }
 
+// L'utilisateur est prévenu si l'email n'est pas parti (au lieu d'un faux « envoyé »)
+const ensureSent = (sent) => {
+  if (!sent) throw httpError(503, "L'email n'a pas pu être envoyé. Réessayez plus tard.");
+};
+
+// Seules une confirmation ou un refus ont un email de statut à renvoyer
+const RESENDABLE = ["validee", "rejetee"];
+
 export async function resendMyOrderEmail(req, res) {
   const order = await findOwnOrder(req.validated.params.id, req.user._id);
-  await sendOrderStatusEmail(order, req.user.email);
+  if (!RESENDABLE.includes(order.status)) {
+    throw httpError(409, "Aucun email à renvoyer pour cette réservation");
+  }
+  ensureSent(await sendOrderStatusEmail(order, req.user.email));
   res.json({ message: "Email renvoyé" });
 }
 
 export async function sendPaymentReminder(req, res) {
   const order = await findOrder(req.validated.params.id);
-  await sendPaymentReminderEmail(order, await accountEmail(order));
+  ensureSent(await sendPaymentReminderEmail(order, await accountEmail(order)));
   res.json({ message: "Rappel envoyé" });
 }
 
 export async function sendRentalSummary(req, res) {
   const order = await findOrder(req.validated.params.id);
-  await sendRentalSummaryEmail(order, await accountEmail(order));
+  ensureSent(await sendRentalSummaryEmail(order, await accountEmail(order)));
   res.json({ message: "Récapitulatif envoyé" });
 }

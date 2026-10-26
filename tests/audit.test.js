@@ -30,10 +30,14 @@ describe("déni de service par le corps de requête (E1)", () => {
   });
 
   it("un appel anonyme n'est jamais lu jusqu'à 3 Mo : le contrôle anti-CSRF passe avant", async () => {
-    const res = await raw()
+    // Le serveur répond 403 sans lire le corps puis ferme la connexion : selon le moment, le
+    // client voit le 403 ou une connexion coupée (ECONNRESET / EPIPE). Les deux prouvent le refus.
+    const outcome = await raw()
       .post("/api/vehicles")
-      .send({ image: "x".repeat(2_000_000) });
-    expect(res.status).toBe(403);
+      .send({ image: "x".repeat(2_000_000) })
+      .then((res) => res.status)
+      .catch((error) => error.code);
+    expect([403, "ECONNRESET", "EPIPE"]).toContain(outcome);
   });
 });
 

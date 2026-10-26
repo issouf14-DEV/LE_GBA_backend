@@ -22,8 +22,8 @@ export async function inviteAccount({ role, data, permissions = [], invitedBy })
     invitedBy,
     password: randomBytes(32).toString("base64url"),
     passwordSetupRequired: true,
-    resetPasswordHash: hashToken(token),
-    resetPasswordExpires: new Date(Date.now() + INVITE_TTL_MS),
+    inviteHash: hashToken(token),
+    inviteExpires: new Date(Date.now() + INVITE_TTL_MS),
   });
   await sendInvitationEmail(user, token);
   return user;

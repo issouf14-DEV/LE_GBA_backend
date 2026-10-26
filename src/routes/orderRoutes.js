@@ -9,8 +9,8 @@ import {
   sendRentalSummary,
   updateOrderStatus,
 } from "../controllers/orderController.js";
-import { authorize, protect, requireRole } from "../middlewares/auth.js";
-import { emailLimiter, orderLimiter } from "../middlewares/rateLimits.js";
+import { authorize, protect, requireRole, requireVerifiedEmail } from "../middlewares/auth.js";
+import { orderLimiter, resendLimiter, staffEmailLimiter } from "../middlewares/rateLimits.js";
 import { validate } from "../middlewares/validate.js";
 import { idParam } from "../schemas/common.js";
 import { listQuery, orderSchema, statusSchema } from "../schemas/index.js";
@@ -21,13 +21,20 @@ const withId = validate(idParam, "params");
 router.use(protect);
 
 // Client (les comptes de l'équipe ne réservent pas)
-router.post("/", requireRole("client"), orderLimiter, validate(orderSchema), createOrder);
+router.post(
+  "/",
+  requireRole("client"),
+  requireVerifiedEmail,
+  orderLimiter,
+  validate(orderSchema),
+  createOrder
+);
 router.get("/mine", getMyOrders);
 router.patch("/:id/cancel", withId, cancelMyOrder);
-router.post("/:id/resend-email", emailLimiter, withId, resendMyOrderEmail);
+router.post("/:id/resend-email", resendLimiter, withId, resendMyOrderEmail);
 
 // Équipe : permission précise exigée pour chaque action
-const manage = [authorize("orders.manage"), emailLimiter, withId];
+const manage = [authorize("orders.manage"), staffEmailLimiter, withId];
 router.get("/", authorize("orders.read"), validate(listQuery, "query"), getAllOrders);
 router.patch(
   "/:id/status",

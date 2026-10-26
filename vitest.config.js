@@ -17,6 +17,7 @@ export default defineConfig({
       FRONTEND_URL: "https://legba-zeta.vercel.app",
       TRUST_PROXY_HOPS: "0",
       ADMIN_EMAIL: "admin@test.local",
+      TOTP_ENC_KEY: "Y2xlLWRlLXRlc3QtdG90cC0zMi1vY3RldHMtQUJDREU=",
     },
   },
 });

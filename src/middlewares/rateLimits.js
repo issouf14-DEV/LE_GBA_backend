@@ -9,7 +9,11 @@ const ip = (req) => ipKeyGenerator(req.ip);
 const email = (req) =>
   typeof req.body?.email === "string" ? hash(req.body.email.toLowerCase()) : "";
 
-const limiter = (name, { minutes, limit, message, key = ip, skipSuccessfulRequests = false }) =>
+// Exportée : chaque fonctionnalité peut déclarer ses propres limites (compteurs séparés en base)
+export const limiter = (
+  name,
+  { minutes, limit, message, key = ip, skipSuccessfulRequests = false }
+) =>
   rateLimit({
     windowMs: minutes * 60 * 1000,
     limit,
@@ -68,12 +72,61 @@ export const emailLimiter = limiter("email", {
   message: "Trop de demandes d'email. Réessayez plus tard.",
 });
 
+// Renvoi d'un email de réservation par le client : 5 par heure et par compte
+export const resendLimiter = limiter("resend", {
+  minutes: 60,
+  limit: 5,
+  message: "Trop de renvois d'email. Réessayez plus tard.",
+  key: (req) => String(req.user?._id || ip(req)),
+});
+
+// Rappels et récapitulatifs envoyés par l'équipe : 50 par heure et par membre (compteur
+// propre à chaque membre, séparé de celui des visiteurs qui partagent la même adresse IP)
+export const staffEmailLimiter = limiter("staff-email", {
+  minutes: 60,
+  limit: 50,
+  message: "Trop d'emails envoyés en une heure. Réessayez plus tard.",
+  key: (req) => String(req.user?._id || ip(req)),
+});
+
 // Mot de passe oublié : 3 emails par heure au maximum vers une même adresse
 export const forgotEmailLimiter = limiter("forgot", {
   minutes: 60,
   limit: 3,
   message: "Trop de demandes pour cette adresse. Réessayez plus tard.",
   key: (req) => email(req) || ip(req),
+});
+
+// Saisie du code « mot de passe oublié » : 10 essais par adresse et par quart d'heure
+// (en plus des 5 essais maximum par code)
+export const resetCodeLimiter = limiter("reset-code", {
+  minutes: 15,
+  limit: 10,
+  message: TOO_MANY,
+  key: (req) => email(req) || ip(req),
+});
+
+// 2e étape de connexion (code 2FA) : 10 échecs par adresse IP et par quart d'heure, en plus
+// du verrouillage du compte après 5 codes faux
+export const mfaLimiter = limiter("mfa", {
+  minutes: 15,
+  limit: 10,
+  message: TOO_MANY,
+  skipSuccessfulRequests: true,
+});
+
+// Code de vérification de l'email : saisies et renvois limités par compte
+export const emailCodeLimiter = limiter("email-code", {
+  minutes: 15,
+  limit: 10,
+  message: TOO_MANY,
+  key: (req) => String(req.user?._id || ip(req)),
+});
+export const emailCodeResendLimiter = limiter("email-code-resend", {
+  minutes: 60,
+  limit: 5,
+  message: "Trop de demandes de code. Réessayez plus tard.",
+  key: (req) => String(req.user?._id || ip(req)),
 });
 
 // Réservations : 10 par heure et par compte (contre le blocage du catalogue par des robots)

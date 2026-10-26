@@ -1,20 +1,29 @@
-// Changement et réinitialisation du mot de passe
+// Mot de passe : changement depuis le profil, code « mot de passe oublié », invitation
 import { describe, expect, it } from "vitest";
 import User from "../src/models/User.js";
+import { hashResetCode } from "../src/services/resetCode.js";
 import { hashToken } from "../src/services/tokens.js";
 import { browser, createUser, loggedIn, PASSWORD, useDatabase } from "./helpers/app.js";
 
 useDatabase();
 
 const NEW_PASSWORD = "NouveauSecret2026";
-const RESET_TOKEN = "a".repeat(43);
+const CODE = "ABCD2345";
 
-async function prepareReset(user, expiresInMs = 30 * 60 * 1000) {
+async function prepareCode(user, { expiresInMs = 30_000, attempts = 0 } = {}) {
   await User.updateOne(
     { _id: user._id },
-    { resetPasswordHash: hashToken(RESET_TOKEN), resetPasswordExpires: Date.now() + expiresInMs }
+    {
+      resetCodeHash: hashResetCode(user.email, CODE),
+      resetCodeExpires: Date.now() + expiresInMs,
+      resetAttempts: attempts,
+    }
   );
 }
+const reset = (user, code = CODE) =>
+  browser().post("/api/auth/reset-password", { email: user.email, code, password: NEW_PASSWORD });
+const login = (user, password = NEW_PASSWORD) =>
+  browser().post("/api/auth/login", { email: user.email, password });
 
 describe("changement depuis le profil", () => {
   it("exige le mot de passe actuel", async () => {
@@ -30,7 +39,6 @@ describe("changement depuis le profil", () => {
     const { client, user } = await loggedIn();
     const otherDevice = browser();
     await otherDevice.post("/api/auth/login", { email: user.email, password: PASSWORD });
-
     const res = await client.put("/api/auth/password", {
       currentPassword: PASSWORD,
       newPassword: NEW_PASSWORD,
@@ -41,84 +49,85 @@ describe("changement depuis le profil", () => {
   });
 });
 
-describe("mot de passe oublié", () => {
-  it("répond la même chose que le compte existe ou non", async () => {
+describe("mot de passe oublié (code par email)", () => {
+  it("même réponse que le compte existe ou non, avec la durée du code", async () => {
     const user = await createUser();
     const known = await browser().post("/api/auth/forgot-password", { email: user.email });
     const unknown = await browser().post("/api/auth/forgot-password", { email: "x@test.local" });
-    expect(known.status).toBe(200);
     expect(known.body).toEqual(unknown.body);
+    expect(known.body.expiresIn).toBe(30);
   });
 
-  it("ne stocke que le hash du jeton de réinitialisation", async () => {
+  it("ne stocke que l'empreinte du code, valable 30 secondes", async () => {
     const user = await createUser();
     await browser().post("/api/auth/forgot-password", { email: user.email });
-    // Le lien est préparé en arrière-plan, juste après la réponse
     let saved;
-    for (let i = 0; i < 50 && !saved?.resetPasswordHash; i++) {
+    for (let i = 0; i < 50 && !saved?.resetCodeHash; i++) {
       await new Promise((resolve) => setTimeout(resolve, 20));
-      saved = await User.findById(user._id).select("+resetPasswordHash");
+      saved = await User.findById(user._id).select("+resetCodeHash +resetCodeExpires");
     }
-    expect(saved.resetPasswordHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(saved.resetCodeHash).toMatch(/^[a-f0-9]{64}$/);
+    const remaining = saved.resetCodeExpires.getTime() - Date.now();
+    expect(remaining).toBeGreaterThan(0);
+    expect(remaining).toBeLessThanOrEqual(30_000);
   });
-});
 
-describe("réinitialisation", () => {
-  it("change le mot de passe, ne sert qu'une fois et ferme toutes les sessions", async () => {
+  it("le bon code change le mot de passe, une seule fois, et ferme les sessions", async () => {
     const { client, user } = await loggedIn();
-    await prepareReset(user);
-
-    const body = { token: RESET_TOKEN, password: NEW_PASSWORD };
-    expect((await browser().post("/api/auth/reset-password", body)).status).toBe(200);
-    expect((await browser().post("/api/auth/reset-password", body)).status).toBe(400);
-
-    // L'ancien cookie d'accès est refusé (émis avant le changement)
+    await prepareCode(user);
+    expect((await reset(user, "abcd-2345")).status).toBe(200);
+    expect((await reset(user)).status).toBe(400);
     expect((await client.get("/api/auth/profile")).status).toBe(401);
-    const login = await browser().post("/api/auth/login", {
-      email: user.email,
-      password: NEW_PASSWORD,
-    });
-    expect(login.status).toBe(200);
+    expect((await login(user)).status).toBe(200);
   });
 
-  it("refuse un lien expiré", async () => {
+  it("refuse un code expiré, un code faux, et le code d'un autre compte", async () => {
     const user = await createUser();
-    await prepareReset(user, -1000);
-    const res = await browser().post("/api/auth/reset-password", {
-      token: RESET_TOKEN,
-      password: NEW_PASSWORD,
-    });
-    expect(res.status).toBe(400);
+    const other = await createUser();
+    await prepareCode(user, { expiresInMs: -1000 });
+    expect((await reset(user)).status).toBe(400);
+    await prepareCode(user);
+    expect((await reset(user, "ZZZZ9999")).status).toBe(400);
+    expect((await reset(other)).status).toBe(400);
+  });
+
+  it("5 essais maximum, même en parallèle : le bon code est ensuite refusé", async () => {
+    const user = await createUser();
+    await prepareCode(user);
+    const attempts = await Promise.all(Array.from({ length: 7 }, () => reset(user, "WXYZ6789")));
+    expect(attempts.every((res) => res.status === 400)).toBe(true);
+    expect((await User.findById(user._id).select("+resetAttempts")).resetAttempts).toBe(5);
+    expect((await reset(user)).status).toBe(400);
+  });
+
+  it("refuse un code au mauvais format sans toucher au compteur", async () => {
+    const user = await createUser();
+    await prepareCode(user);
+    expect((await reset(user, "<script>")).status).toBe(400);
+    expect((await User.findById(user._id).select("+resetAttempts")).resetAttempts).toBe(0);
   });
 
   it("débloque un compte verrouillé", async () => {
     const user = await createUser();
     await User.updateOne({ _id: user._id }, { lockUntil: Date.now() + 600_000 });
-    await prepareReset(user);
-    await browser().post("/api/auth/reset-password", {
-      token: RESET_TOKEN,
-      password: NEW_PASSWORD,
-    });
-    const login = await browser().post("/api/auth/login", {
-      email: user.email,
-      password: NEW_PASSWORD,
-    });
-    expect(login.status).toBe(200);
+    await prepareCode(user);
+    await reset(user);
+    expect((await login(user)).status).toBe(200);
   });
+});
 
-  it("invitation : le lien reçu permet de choisir son mot de passe puis de se connecter", async () => {
+describe("invitation", () => {
+  it("le lien d'invitation active le compte une seule fois", async () => {
+    const token = "a".repeat(43);
     const user = await createUser({ role: "gestionnaire", passwordSetupRequired: true });
-    await prepareReset(user, 72 * 3600 * 1000);
-    const res = await browser().post("/api/auth/reset-password", {
-      token: RESET_TOKEN,
-      password: NEW_PASSWORD,
-    });
-    expect(res.status).toBe(200);
+    await User.updateOne(
+      { _id: user._id },
+      { inviteHash: hashToken(token), inviteExpires: Date.now() + 72 * 3600 * 1000 }
+    );
+    const body = { token, password: NEW_PASSWORD };
+    expect((await browser().post("/api/auth/accept-invitation", body)).status).toBe(200);
+    expect((await browser().post("/api/auth/accept-invitation", body)).status).toBe(400);
     expect((await User.findById(user._id)).passwordSetupRequired).toBe(false);
-    const login = await browser().post("/api/auth/login", {
-      email: user.email,
-      password: NEW_PASSWORD,
-    });
-    expect(login.status).toBe(200);
+    expect((await login(user)).status).toBe(200);
   });
 });

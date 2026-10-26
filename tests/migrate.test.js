@@ -60,14 +60,36 @@ describe("migration", () => {
     const { db, vehicleId } = await seedLegacy();
     await migrateVehicles(db, true);
     const vehicle = await db.collection("vehicles").findOne({ _id: vehicleId });
-    expect(vehicle.hasImageData).toBe(true);
-    expect(vehicle.image).toBe("");
+    expect(vehicle.gallery).toHaveLength(1);
+    expect(vehicle).not.toHaveProperty("image");
+    expect(vehicle).not.toHaveProperty("imageData");
     expect(vehicle).not.toHaveProperty("vin");
     expect(vehicle).not.toHaveProperty("miles");
 
     const list = await raw().get("/api/vehicles");
     expect(JSON.stringify(list.body)).not.toContain(PNG);
     expect((await raw().get(list.body.vehicles[0].image)).status).toBe(200);
+  });
+
+  it("garde les images https existantes (affichées) au lieu de les retirer", async () => {
+    const { db } = mongoose.connection;
+    const { insertedId } = await db.collection("vehicles").insertOne({
+      brand: "Kia",
+      model: "Rio",
+      price: 10_000,
+      image: "https://images.unsplash.com/photo-1.jpg",
+      photos: ["https://images.unsplash.com/photo-2.jpg", "javascript:alert(1)"],
+    });
+    expect(await migrateVehicles(db, false)).toMatch(/1 véhicule\(s\) gardant/);
+    await migrateVehicles(db, true);
+    const vehicle = await db.collection("vehicles").findOne({ _id: insertedId });
+    expect(vehicle.legacyImages).toEqual([
+      "https://images.unsplash.com/photo-1.jpg",
+      "https://images.unsplash.com/photo-2.jpg",
+    ]);
+    expect(vehicle.type).toBe("thermal");
+    const { body } = await raw().get(`/api/vehicles/${insertedId}`);
+    expect(body.image).toBe("https://images.unsplash.com/photo-1.jpg");
   });
 
   it("peut être relancée sans rien casser", async () => {

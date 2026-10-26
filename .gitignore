@@ -31,3 +31,6 @@ build/
 Thumbs.db
 .vscode/
 .idea/
+
+# Sauvegardes locales de la base (données personnelles : jamais dans Git)
+backups/

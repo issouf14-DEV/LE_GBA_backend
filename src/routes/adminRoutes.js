@@ -1,5 +1,6 @@
 import express from "express";
 import { getStats } from "../controllers/adminController.js";
+import { listAudit } from "../controllers/auditController.js";
 import {
   deleteClient,
   inviteClient,
@@ -8,6 +9,7 @@ import {
 } from "../controllers/clientController.js";
 import { authorize, protect } from "../middlewares/auth.js";
 import { validate } from "../middlewares/validate.js";
+import { auditListQuery } from "../schemas/audit.js";
 import { idParam } from "../schemas/common.js";
 import { accountStatusSchema, clientListQuery, inviteClientSchema } from "../schemas/team.js";
 
@@ -29,5 +31,8 @@ router.patch(
   updateClientStatus
 );
 router.delete("/clients/:id", authorize("clients.manage"), withId, deleteClient);
+
+// Journal d'audit : lecture seule
+router.get("/audit", authorize("audit.read"), validate(auditListQuery, "query"), listAudit);
 
 export default router;

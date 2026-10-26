@@ -2,7 +2,7 @@
 
 API REST de LE-GBA, application de location de véhicules. Elle fournit :
 - le **catalogue** public des véhicules (recherche, filtres, tri, photos) ;
-- les **réservations** des clients, avec **paiement à la remise du véhicule** (aucun paiement en ligne) ;
+- les **réservations** des clients, avec **paiement à la remise du véhicule** et, si activé, **acompte en ligne par Mobile Money** (CinetPay) ;
 - l'**administration** : gestion du catalogue, des réservations, des comptes et tableau de bord.
 
 Technologies : Node.js (>= 20, modules ES), Express 5, MongoDB avec Mongoose 8, Zod 4, JSON Web Tokens en cookies httpOnly, Brevo (ou SendGrid) pour les emails, Vitest pour les tests.
@@ -47,25 +47,34 @@ Au démarrage, si `ADMIN_EMAIL` et `ADMIN_PASSWORD` sont renseignés et qu'aucun
 
 Elles sont validées au démarrage par `src/config/env.js` : si une variable obligatoire manque ou est invalide, le serveur affiche l'erreur et refuse de démarrer.
 
-| Nom                     | Rôle                                                                                                                                                                             | Obligatoire                       |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| `NODE_ENV`              | `development`, `production` ou `test` (défaut : `development`). En production : cookies `Secure` préfixés `__Secure-`, origines de développement refusées.                       | Non                               |
-| `PORT`                  | Port d'écoute (défaut : `5000`).                                                                                                                                                 | Non                               |
-| `MONGO_URI`             | Chaîne de connexion MongoDB.                                                                                                                                                     | Oui                               |
-| `JWT_ACCESS_SECRET`     | Secret de signature des jetons d'accès (32 caractères minimum).                                                                                                                  | Oui                               |
-| `JWT_REFRESH_SECRET`    | Secret distinct, utilisé pour l'empreinte HMAC des jetons de renouvellement et de réinitialisation (32 caractères minimum).                                                      | Oui                               |
-| `FRONTEND_URL`          | Adresse(s) exacte(s) du frontend, séparées par des virgules (ex. `https://votre-frontend.vercel.app`). La première sert aussi aux liens des emails.                              | Oui                               |
-| `TRUST_PROXY_HOPS`      | Nombre de proxys devant le serveur, pour connaître la vraie IP du client. Défaut : `0` (l'en-tête `X-Forwarded-For`, falsifiable, est ignoré). `2` derrière Vercel + Northflank. | Non                               |
-| `PROXY_SECRET`          | Secret partagé avec le proxy Vercel (32 caractères minimum). Une fois défini, toute requête `/api` sans l'en-tête `X-Proxy-Auth` correspondant est refusée (403). Vide en local. | Non (indispensable en production) |
-| `PROXY_SECRET_PREVIOUS` | Ancien secret du proxy, encore accepté pendant un changement de secret. À retirer une fois la rotation terminée.                                                                 | Non                               |
-| `ADMIN_NAME`            | Nom du premier administrateur (défaut : `Administrateur`).                                                                                                                       | Non                               |
-| `ADMIN_EMAIL`           | Email du premier administrateur ; reçoit aussi les alertes de nouvelle réservation.                                                                                              | Non                               |
-| `ADMIN_PASSWORD`        | Mot de passe du premier administrateur (8 caractères minimum, lettres et chiffres, mot de passe non courant). À retirer une fois le compte créé.                                 | Non                               |
-| `EMAIL_PROVIDER`        | Fournisseur d'emails : `brevo` (défaut, gratuit jusqu'à 300 emails par jour) ou `sendgrid`.                                                                                      | Non                               |
-| `BREVO_API_KEY`         | Clé API Brevo (SMTP & API > Clés API). Sans clé, les emails ne partent pas.                                                                                                      | Non                               |
-| `SENDGRID_API_KEY`      | Clé SendGrid, seulement si `EMAIL_PROVIDER=sendgrid` (offre gratuite supprimée en mai 2025).                                                                                     | Non                               |
-| `EMAIL_FROM`            | Adresse d'expédition, vérifiée chez le fournisseur (`EMAIL_USER`, ancien nom, est encore accepté).                                                                               | Non                               |
-| `EMAIL_FROM_NAME`       | Nom affiché de l'expéditeur (défaut : « LE-GBA »).                                                                                                                               | Non                               |
+| Nom                                                           | Rôle                                                                                                                                                                                   | Obligatoire                        |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `NODE_ENV`                                                    | `development`, `production` ou `test` (défaut : `development`). En production : cookies `Secure` préfixés `__Secure-`, origines de développement refusées.                             | Non                                |
+| `PORT`                                                        | Port d'écoute (défaut : `5000`).                                                                                                                                                       | Non                                |
+| `MONGO_URI`                                                   | Chaîne de connexion MongoDB.                                                                                                                                                           | Oui                                |
+| `JWT_ACCESS_SECRET`                                           | Secret de signature des jetons d'accès (32 caractères minimum).                                                                                                                        | Oui                                |
+| `JWT_REFRESH_SECRET`                                          | Secret distinct, utilisé pour l'empreinte HMAC des jetons de renouvellement et de réinitialisation (32 caractères minimum).                                                            | Oui                                |
+| `FRONTEND_URL`                                                | Adresse(s) exacte(s) du frontend, séparées par des virgules (ex. `https://votre-frontend.vercel.app`). La première sert aussi aux liens des emails.                                    | Oui                                |
+| `TRUST_PROXY_HOPS`                                            | Nombre de proxys devant le serveur, pour connaître la vraie IP du client. Défaut : `0` (l'en-tête `X-Forwarded-For`, falsifiable, est ignoré). `2` derrière Vercel + Northflank.       | Non                                |
+| `RESET_CODE_TTL_SECONDS`                                      | Validité du code « mot de passe oublié », en secondes (défaut 30, de 30 à 900). Le code (8 caractères, 5 essais maximum, usage unique) est envoyé par email, sans aucun lien.          | Non                                |
+| `PROXY_SECRET`                                                | Secret partagé avec le proxy Vercel (32 caractères minimum). Une fois défini, toute requête `/api` sans l'en-tête `X-Proxy-Auth` correspondant est refusée (403). Vide en local.       | Non (indispensable en production)  |
+| `TOTP_ENC_KEY`                                                | Clé de chiffrement des secrets 2FA de l'équipe (32 octets en base64, commande dans `.env.example`). Ne plus la changer une fois des 2FA configurées.                                   | Oui en production                  |
+| `RABBITMQ_URL`                                                | Bus d'événements (`amqp://` ou `amqps://`). Vide : bus en mémoire et worker intégré à l'API. Défini : seul `npm run worker` traite les événements. Guide : `docs/RABBITMQ.md`.         | Oui pour le worker en production   |
+| `RABBITMQ_PREFETCH`, `RELAY_INTERVAL_MS`                      | Messages traités en parallèle par le worker (défaut 10) ; intervalle du relais de l'outbox en ms (défaut 1000).                                                                        | Non                                |
+| `NOTIFICATION_TTL_DAYS`, `SSE_PING_MS`                        | Conservation des notifications de l'application en jours (défaut 90) ; ping du flux temps réel `/api/notifications/stream` en ms (défaut 25000, moins de 120 s à cause du CDN Vercel). | Non                                |
+| `MFA_ISSUER`                                                  | Nom affiché dans l'application d'authentification (défaut `LE-GBA`).                                                                                                                   | Non                                |
+| `PROXY_SECRET_PREVIOUS`                                       | Ancien secret du proxy, encore accepté pendant un changement de secret. À retirer une fois la rotation terminée.                                                                       | Non                                |
+| `ADMIN_NAME`                                                  | Nom du premier administrateur (défaut : `Administrateur`).                                                                                                                             | Non                                |
+| `ADMIN_EMAIL`                                                 | Email du premier administrateur ; reçoit aussi les alertes de nouvelle réservation.                                                                                                    | Non                                |
+| `ADMIN_PASSWORD`                                              | Mot de passe du premier administrateur (8 caractères minimum, lettres et chiffres, mot de passe non courant). À retirer une fois le compte créé.                                       | Non                                |
+| `EMAIL_PROVIDER`                                              | Fournisseur d'emails : `brevo` (défaut, gratuit jusqu'à 300 emails par jour) ou `sendgrid`.                                                                                            | Non                                |
+| `BREVO_API_KEY`                                               | Clé API Brevo (SMTP & API > Clés API). Sans clé, les emails ne partent pas.                                                                                                            | Non                                |
+| `SENDGRID_API_KEY`                                            | Clé SendGrid, seulement si `EMAIL_PROVIDER=sendgrid` (offre gratuite supprimée en mai 2025).                                                                                           | Non                                |
+| `EMAIL_FROM`                                                  | Adresse d'expédition, vérifiée chez le fournisseur (`EMAIL_USER`, ancien nom, est encore accepté).                                                                                     | Non                                |
+| `EMAIL_FROM_NAME`                                             | Nom affiché de l'expéditeur (défaut : « LE-GBA »).                                                                                                                                     | Non                                |
+| `PAYMENT_PROVIDER`                                            | Paiement en ligne de l'acompte : `none` (défaut, désactivé), `fake` (simulé, refusé en production) ou `cinetpay` (Mobile Money). Voir « Paiement de l'acompte ».                       | Non                                |
+| `PAYMENT_DEPOSIT_PERCENT`                                     | Part du prix total payée en ligne, en % (défaut 30, de 1 à 100), arrondie au multiple de 5 FCFA supérieur.                                                                             | Non                                |
+| `CINETPAY_API_KEY`, `CINETPAY_SITE_ID`, `CINETPAY_SECRET_KEY` | Identifiants du compte marchand CinetPay ; la clé secrète vérifie la signature `x-token` des notifications.                                                                            | Oui si `PAYMENT_PROVIDER=cinetpay` |
 
 Ne commitez jamais le fichier `.env`.
 
@@ -73,17 +82,20 @@ Ne commitez jamais le fichier `.env`.
 
 ## Scripts npm
 
-| Commande                                 | Effet                                                                                                                |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `npm start`                              | Démarre l'API (`node src/server.js`), utilisé en production.                                                         |
-| `npm run dev`                            | Démarre l'API avec nodemon (redémarre à chaque modification).                                                        |
-| `npm test`                               | Lance toute la suite de tests Vitest (base MongoDB en mémoire).                                                      |
-| `npm run check`                          | Vérifie le formatage et le lint avec Biome.                                                                          |
-| `npm run format`                         | Corrige automatiquement le formatage et le lint avec Biome.                                                          |
-| `npm run check:size`                     | Vérifie les règles du projet : 150 lignes maximum par fichier `.js` et aucun émoji dans `src`, `scripts` et `tests`. |
-| `npm run email:test -- vous@exemple.com` | Envoie un email de test et affiche la cause exacte d'un échec (clé, expéditeur non vérifié, offre expirée).          |
-| `npm run migrate`                        | Migration des données de l'ancienne version, en **simulation** (n'écrit rien). Ajouter `-- --apply` pour appliquer.  |
-| `npm run verify`                         | Enchaîne `check`, `check:size` et les tests : à lancer avant chaque livraison.                                       |
+| Commande                                 | Effet                                                                                                                                                                                                |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm start`                              | Démarre l'API (`node src/server.js`), utilisé en production.                                                                                                                                         |
+| `npm run dev`                            | Démarre l'API avec nodemon (redémarre à chaque modification).                                                                                                                                        |
+| `npm test`                               | Lance toute la suite de tests Vitest (base MongoDB en mémoire).                                                                                                                                      |
+| `npm run check`                          | Vérifie le formatage et le lint avec Biome.                                                                                                                                                          |
+| `npm run format`                         | Corrige automatiquement le formatage et le lint avec Biome.                                                                                                                                          |
+| `npm run check:size`                     | Vérifie les règles du projet : 150 lignes maximum par fichier `.js` et aucun émoji dans `src`, `scripts` et `tests`.                                                                                 |
+| `npm run email:test -- vous@exemple.com` | Envoie un email de test et affiche la cause exacte d'un échec (clé, expéditeur non vérifié, offre expirée).                                                                                          |
+| `npm run create-superadmin`              | Crée le compte super-administrateur : nom, email et mot de passe (12 caractères min.) demandés dans le terminal, mot de passe masqué.                                                                |
+| `npm run reset-mfa -- email@exemple.com` | Efface la 2FA d'un compte (téléphone ET codes de secours perdus) et ferme ses sessions : reconfiguration à la connexion suivante. Pour un gestionnaire, le superadmin le fait depuis la page Équipe. |
+| `npm run worker`                         | Worker des événements : publie l'outbox sur RabbitMQ et envoie les emails (réservations, statuts, alertes de sécurité). Voir `docs/RABBITMQ.md`.                                                     |
+| `npm run migrate`                        | Migration des données de l'ancienne version, en **simulation** (n'écrit rien). Ajouter `-- --apply` pour appliquer.                                                                                  |
+| `npm run verify`                         | Enchaîne `check`, `check:size` et les tests : à lancer avant chaque livraison.                                                                                                                       |
 
 ---
 
@@ -155,6 +167,21 @@ Toutes ces routes exigent une session et le rôle administrateur.
 | DELETE  | `/api/admin/users/:id` | Admin | Supprime un compte (ni le sien, ni un client ayant une réservation en cours) et ferme ses sessions.   |
 
 Pagination des listes : paramètres `page` (défaut 1, maximum 1000) et `limit` (défaut 20, maximum 100).
+
+### Paiement de l'acompte (`/api/payments`)
+
+Désactivé par défaut (`PAYMENT_PROVIDER=none` : les routes répondent 503, sauf `/config`). Le montant est **toujours calculé par le serveur** (`PAYMENT_DEPOSIT_PERCENT` du prix total, multiple de 5 FCFA) ; seule une réservation **confirmée** (`validee`) peut être payée, par son client, avec une seule tentative en cours à la fois. Le reste se paie à la remise du véhicule.
+
+| Méthode  | Chemin                          | Accès           | Rôle                                                                                                |
+| -------- | ------------------------------- | --------------- | --------------------------------------------------------------------------------------------------- |
+| GET      | `/api/payments/config`          | Public          | `{ enabled, depositPercent }`.                                                                      |
+| POST     | `/api/payments/orders/:id`      | Client          | Crée (ou reprend) la tentative et renvoie l'adresse de la page de paiement (`paymentUrl`).          |
+| GET      | `/api/payments/orders/:id`      | Client          | État réel de l'acompte, vérifié auprès du fournisseur si une tentative est en cours.                |
+| GET      | `/api/payments`                 | `payments.read` | Liste paginée des paiements (filtre `status`).                                                      |
+| POST     | `/api/payments/cinetpay/notify` | CinetPay        | Notification : signature `x-token` (HMAC SHA-256) vérifiée, puis état confirmé par `payment/check`. |
+| GET/POST | `/api/payments/cinetpay/return` | Navigateur      | Retour du client après paiement : redirection vers `/payment/return` du site.                       |
+
+Les deux routes `cinetpay/*` sont montées avant le contrôle anti-CSRF (CinetPay n'envoie pas `X-Requested-With`) mais derrière le proxy Vercel, avec leur propre limite de requêtes et un corps de 8 Ko maximum. Un paiement accepté passe la réservation en `paymentStatus: deposit_paid` et écrit l'événement `payment.accepted` (reçu par email) dans la même transaction.
 
 ---
 
@@ -270,18 +297,19 @@ Une fois le service démarré, Northflank affiche son **URL publique**, au forma
 
 Créez-les dans un **Secret group** du projet, relié au service (ou directement dans les variables du service). Marquez chacune comme **secrète** : Northflank masque alors leur valeur dans l'interface.
 
-| Nom                                             | Valeur                                                                                                                                                  |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NODE_ENV`                                      | `production`                                                                                                                                            |
-| `PORT`                                          | `8080`                                                                                                                                                  |
-| `MONGO_URI`                                     | Chaîne de connexion Atlas de l'utilisateur dédié (voir étape 4).                                                                                        |
-| `JWT_ACCESS_SECRET`                             | Valeur aléatoire générée avec la commande `node` de `.env.example`.                                                                                     |
-| `JWT_REFRESH_SECRET`                            | Une **autre** valeur générée de la même façon (jamais la même que `JWT_ACCESS_SECRET`).                                                                 |
-| `FRONTEND_URL`                                  | URL exacte du site Vercel (`https://...`, sans barre finale).                                                                                           |
-| `TRUST_PROXY_HOPS`                              | `2` : Vercel puis le répartiteur de charge de Northflank sont devant le serveur. À confirmer en regardant l'IP vue dans les journaux (voir ci-dessous). |
-| `PROXY_SECRET`                                  | Même valeur que la variable `PROXY_SECRET` de Vercel, 32 caractères minimum.                                                                            |
-| `ADMIN_NAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`   | Premier administrateur seulement. **Retirez `ADMIN_PASSWORD`** (et redéployez) dès que le compte est créé.                                              |
-| `EMAIL_PROVIDER`, `BREVO_API_KEY`, `EMAIL_FROM` | Facultatif : fournisseur, clé et adresse d'expédition vérifiée. Testez avec `npm run email:test -- vous@exemple.com`.                                   |
+| Nom                                             | Valeur                                                                                                                                                            |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                                      | `production`                                                                                                                                                      |
+| `PORT`                                          | `8080`                                                                                                                                                            |
+| `MONGO_URI`                                     | Chaîne de connexion Atlas de l'utilisateur dédié (voir étape 4).                                                                                                  |
+| `JWT_ACCESS_SECRET`                             | Valeur aléatoire générée avec la commande `node` de `.env.example`.                                                                                               |
+| `JWT_REFRESH_SECRET`                            | Une **autre** valeur générée de la même façon (jamais la même que `JWT_ACCESS_SECRET`).                                                                           |
+| `FRONTEND_URL`                                  | URL exacte du site Vercel (`https://...`, sans barre finale).                                                                                                     |
+| `TRUST_PROXY_HOPS`                              | `2` : Vercel puis le répartiteur de charge de Northflank sont devant le serveur. À confirmer en regardant l'IP vue dans les journaux (voir ci-dessous).           |
+| `PROXY_SECRET`                                  | Même valeur que la variable `PROXY_SECRET` de Vercel, 32 caractères minimum.                                                                                      |
+| `TOTP_ENC_KEY`                                  | Clé de chiffrement des secrets 2FA (commande dans `.env.example`), de type **Secret**. Gardez-en une copie sûre : la perdre oblige à reconfigurer toutes les 2FA. |
+| `ADMIN_NAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`   | Premier administrateur seulement. **Retirez `ADMIN_PASSWORD`** (et redéployez) dès que le compte est créé.                                                        |
+| `EMAIL_PROVIDER`, `BREVO_API_KEY`, `EMAIL_FROM` | Facultatif : fournisseur, clé et adresse d'expédition vérifiée. Testez avec `npm run email:test -- vous@exemple.com`.                                             |
 
 Pour générer un secret :
 

@@ -1,0 +1,42 @@
+# RabbitMQ local pour s'entraîner et développer LE-GBA (guide : docs/RABBITMQ.md).
+# Ce fichier ne sert PAS en production : là-bas, RabbitMQ est fourni par Northflank (ou CloudAMQP).
+#
+# Démarrer : docker compose up -d        Arrêter : docker compose stop
+# Tout effacer (files et messages compris) : docker compose down -v
+#
+# Les identifiants ne sont jamais écrits ici. Docker Compose les lit dans les variables
+# d'environnement du terminal, ou dans le fichier .env de ce dossier (ignoré par Git) :
+#   RABBITMQ_DEFAULT_USER=gba
+#   RABBITMQ_DEFAULT_PASS=un-mot-de-passe-local
+# Si l'une manque, Compose s'arrête avec le message indiqué après « :? ».
+
+services:
+  rabbitmq:
+    # Image officielle avec l'interface de gestion. Version précise (série 4.3), jamais « latest » :
+    # une mise à jour ne doit pas arriver sans qu'on l'ait choisie.
+    image: rabbitmq:4.3-management
+    # Nom d'hôte fixe : RabbitMQ range ses données sous le nom du nœud, qui dépend du nom d'hôte.
+    # Sans lui, un conteneur recréé ne retrouverait pas les files enregistrées dans le volume.
+    hostname: gba-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:?Définissez RABBITMQ_DEFAULT_USER (voir docs/RABBITMQ.md)}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?Définissez RABBITMQ_DEFAULT_PASS (voir docs/RABBITMQ.md)}
+    ports:
+      # Publiés uniquement sur 127.0.0.1 : seul cet ordinateur peut s'y connecter,
+      # pas les autres appareils du réseau (Wi-Fi partagé, etc.).
+      - "127.0.0.1:5672:5672" # protocole AMQP, utilisé par l'application (RABBITMQ_URL)
+      - "127.0.0.1:15672:15672" # interface de gestion : http://localhost:15672
+    volumes:
+      # Volume nommé : files durables et messages persistants survivent à un redémarrage.
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      # Répond quand le nœud RabbitMQ est démarré et joignable.
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  rabbitmq-data:

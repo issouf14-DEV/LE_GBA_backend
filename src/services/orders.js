@@ -42,7 +42,7 @@ export async function quoteOrder(userId, { vehicleId, startDate, endDate }) {
 
   const pending = await Order.countDocuments({ user: userId, status: "en_attente" });
   if (pending >= MAX_PENDING_PER_USER) {
-    throw httpError(429, "Trop de réservations en attente. Patientez leur validation.");
+    throw httpError(409, "Vous avez déjà 5 réservations en attente : patientez leur validation.");
   }
 
   return { vehicle, days, start, end };
@@ -50,7 +50,7 @@ export async function quoteOrder(userId, { vehicleId, startDate, endDate }) {
 
 // Réservations actives qui chevauchent la période [start, end[
 // (opérateurs écrits par le serveur lui-même : marqués « de confiance » pour sanitizeFilter)
-function overlapFilter(vehicleId, start, end) {
+export function overlapFilter(vehicleId, start, end) {
   return {
     vehicle: vehicleId,
     status: mongoose.trusted({ $in: ["en_attente", "validee"] }),
@@ -66,10 +66,10 @@ export async function ensureNoDoubleBooking(order) {
   const earlier = await Order.exists({
     ...overlapFilter(order.vehicle, order.startDate, order.endDate),
     $or: [
-      { createdAt: { $lt: order.createdAt } },
-      { createdAt: order.createdAt, _id: { $lt: order._id } },
+      { createdAt: mongoose.trusted({ $lt: order.createdAt }) },
+      { createdAt: order.createdAt, _id: mongoose.trusted({ $lt: order._id }) },
     ],
-  }).setOptions({ sanitizeFilter: false });
+  });
   if (earlier) {
     await Order.deleteOne({ _id: order._id });
     throw httpError(409, "Ce véhicule vient d'être réservé sur ces dates");
@@ -97,9 +97,11 @@ export function serializeOrder(order, { withUser = false } = {}) {
     notes: plain.notes,
     status: plain.status,
     paymentMethod: plain.paymentMethod,
+    paymentStatus: plain.paymentStatus ?? "none",
     createdAt: plain.createdAt,
     validatedAt: plain.validatedAt,
     completedAt: plain.completedAt,
+    cancelledAt: plain.cancelledAt,
     ...(withUser && plain.user?.email
       ? { user: { _id: plain.user._id, name: plain.user.name, email: plain.user.email } }
       : {}),

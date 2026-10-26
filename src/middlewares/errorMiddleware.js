@@ -5,9 +5,11 @@ export const notFound = (_req, res) => {
 };
 
 // Erreur métier avec un code HTTP explicite (ex : throw httpError(404, "Commande introuvable"))
+// Son message est écrit par nous : il peut être montré au client, même pour un code 5xx (503)
 export function httpError(status, message) {
   const error = new Error(message);
   error.status = status;
+  error.isHttpError = true;
   return error;
 }
 
@@ -26,11 +28,14 @@ export const errorHandler = (err, req, res, _next) => {
   const known = KNOWN_ERRORS.find(([match]) => match(err));
   if (known) return res.status(known[1]).json({ message: known[2] });
 
-  const status = Number.isInteger(err.status) && err.status < 500 ? err.status : 500;
-  if (status === 500) console.error(`[${req.method} ${req.path}]`, err.message);
+  // Erreur créée par httpError : code et message maîtrisés. Autre erreur avec un code < 500
+  // (bibliothèque) : code conservé. Tout le reste : 500 générique, détails dans les journaux.
+  const exposed = Number.isInteger(err.status) && (err.isHttpError || err.status < 500);
+  const status = exposed ? err.status : 500;
+  if (status >= 500) console.error(`[${req.method} ${req.path}]`, err.message);
 
   return res.status(status).json({
-    message: status === 500 ? "Erreur interne du serveur" : err.message,
-    ...(isProduction || status !== 500 ? {} : { stack: err.stack }),
+    message: exposed ? err.message : "Erreur interne du serveur",
+    ...(isProduction || exposed ? {} : { stack: err.stack }),
   });
 };

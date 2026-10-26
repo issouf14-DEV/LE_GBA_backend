@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CODE_PATTERN } from "../services/resetCode.js";
 import {
   anyPassword,
   email,
@@ -40,8 +41,17 @@ export const passwordSchema = z.strictObject({
 
 export const forgotSchema = z.strictObject({ email });
 
-export const resetSchema = z.strictObject({
-  token: z.string().regex(/^[A-Za-z0-9_-]{40,100}$/, "Lien invalide ou expiré"),
+// Code reçu par email : majuscules, sans espaces ni tirets (saisie tolérante, contrôle strict)
+const resetCode = z
+  .string()
+  .max(20)
+  .transform((value) => value.replace(/[\s-]/g, "").toUpperCase())
+  .pipe(z.string().regex(CODE_PATTERN, "Code invalide ou expiré. Refaites une demande."));
+
+export const resetSchema = z.strictObject({ email, code: resetCode, password: strongPassword });
+
+export const acceptInviteSchema = z.strictObject({
+  token: z.string().regex(/^[A-Za-z0-9_-]{40,100}$/, "Lien d'invitation invalide ou expiré"),
   password: strongPassword,
 });
 

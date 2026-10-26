@@ -36,6 +36,8 @@ const orderSchema = new mongoose.Schema(
     notes: { type: String, maxlength: 500, default: "" },
     status: { type: String, enum: ORDER_STATUSES, default: "en_attente", index: true },
     paymentMethod: { type: String, enum: ["on_delivery"], default: "on_delivery" },
+    // Acompte payé en ligne (Mobile Money) : distinct du statut de la réservation
+    paymentStatus: { type: String, enum: ["none", "deposit_paid"], default: "none" },
     validatedAt: Date,
     completedAt: Date,
     cancelledAt: Date,

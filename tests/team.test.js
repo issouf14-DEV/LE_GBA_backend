@@ -22,9 +22,9 @@ describe("invitation d'un gestionnaire", () => {
     expect(res.status).toBe(201);
     expect(res.body.role).toBe("gestionnaire");
     expect(res.body.permissions).toEqual(["orders.read", "orders.manage"]);
-    const saved = await User.findOne({ email: MANAGER.email }).select("+resetPasswordHash");
+    const saved = await User.findOne({ email: MANAGER.email }).select("+inviteHash");
     expect(saved.passwordSetupRequired).toBe(true);
-    expect(saved.resetPasswordHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(saved.inviteHash).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it("refuse une permission inconnue et un rôle fourni par le navigateur", async () => {

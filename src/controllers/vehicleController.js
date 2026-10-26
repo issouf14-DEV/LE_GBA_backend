@@ -1,13 +1,10 @@
 import mongoose from "mongoose";
 import { httpError } from "../middlewares/errorMiddleware.js";
-import Order from "../models/Order.js";
 import Vehicle from "../models/Vehicle.js";
-import {
-  PUBLIC_FIELDS,
-  toNewVehicle,
-  toPublicVehicle,
-  toVehicleUpdate,
-} from "../services/vehicles.js";
+import { auditVehicle } from "../services/audit.js";
+import { hasBlockingOrders } from "../services/orderStatus.js";
+import { deletePhotosOf } from "../services/vehiclePhotos.js";
+import { PUBLIC_FIELDS, photoUrl, toPublicVehicle } from "../services/vehicles.js";
 import { escapeRegex } from "../utils/escape.js";
 
 const SORTS = {
@@ -50,28 +47,26 @@ export async function getVehicleById(req, res) {
   res.json(toPublicVehicle(vehicle));
 }
 
-// Photo enregistrée depuis l'administration, servie comme une vraie image (mise en cache)
+// Ancienne adresse de photo (copiée dans d'anciennes réservations) : renvoie vers la photo
+// principale actuelle du véhicule
 export async function getVehicleImage(req, res) {
-  const vehicle = await Vehicle.findById(req.validated.params.id)
-    .select("+imageData +imageType")
-    .lean();
-  if (!vehicle?.imageData || !vehicle.imageType) throw httpError(404, "Image introuvable");
-  res
-    .type(vehicle.imageType)
-    .set("Cache-Control", "public, max-age=31536000, immutable")
-    .send(Buffer.from(vehicle.imageData, "base64"));
+  const vehicle = await Vehicle.findById(req.validated.params.id).select("gallery").lean();
+  const cover = vehicle?.gallery?.[0];
+  if (!cover) throw httpError(404, "Image introuvable");
+  res.redirect(301, photoUrl(vehicle._id, cover._id));
 }
 
 // Admin : req.body a déjà été réduit par Zod aux seuls champs autorisés
 export async function createVehicle(req, res) {
-  const vehicle = await Vehicle.create(toNewVehicle(req.body));
+  const vehicle = await Vehicle.create(req.body);
+  await auditVehicle(req, "vehicle.created", vehicle);
   res.status(201).json(toPublicVehicle(vehicle));
 }
 
 export async function updateVehicle(req, res) {
   const vehicle = await Vehicle.findByIdAndUpdate(
     req.validated.params.id,
-    toVehicleUpdate(req.body),
+    { $set: req.body },
     {
       new: true,
       runValidators: true,
@@ -80,16 +75,15 @@ export async function updateVehicle(req, res) {
     .select(PUBLIC_FIELDS)
     .lean();
   if (!vehicle) throw httpError(404, "Véhicule introuvable");
+  // Seuls les noms des champs modifiés sont notés
+  await auditVehicle(req, "vehicle.updated", vehicle, { fields: Object.keys(req.body) });
   res.json(toPublicVehicle(vehicle));
 }
 
 // Un véhicule réservé ne peut pas être supprimé (les réservations en cours le référencent)
 export async function deleteVehicle(req, res) {
   const { id } = req.validated.params;
-  const active = await Order.exists({
-    vehicle: id,
-    status: mongoose.trusted({ $in: ["en_attente", "validee"] }),
-  });
+  const active = await hasBlockingOrders({ vehicle: id });
   if (active) {
     throw httpError(
       409,
@@ -98,5 +92,7 @@ export async function deleteVehicle(req, res) {
   }
   const vehicle = await Vehicle.findByIdAndDelete(id);
   if (!vehicle) throw httpError(404, "Véhicule introuvable");
+  await deletePhotosOf(id);
+  await auditVehicle(req, "vehicle.deleted", vehicle);
   res.status(204).end();
 }

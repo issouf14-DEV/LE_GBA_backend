@@ -1,6 +1,7 @@
 import { ACCESS_COOKIE } from "../config/cookies.js";
 import { hasPermissions, isSuperadmin, normalizeRole } from "../config/permissions.js";
 import User from "../models/User.js";
+import { requiresMfa } from "../services/mfa.js";
 import { isSessionActive, verifyAccessToken } from "../services/tokens.js";
 
 const unauthorized = (res) => res.status(401).json({ message: "Authentification requise" });
@@ -28,6 +29,8 @@ export async function protect(req, res, next) {
   if (!user || user.disabledAt || !active || payload.ver !== (user.tokenVersion ?? 0)) {
     return unauthorized(res);
   }
+  // Membre de l'équipe sans 2FA (session ouverte avant son activation) : reconnexion exigée
+  if (requiresMfa(user) && !user.mfaEnabledAt) return unauthorized(res);
 
   req.user = user;
   req.auth = { sid: payload.sid, exp: payload.exp };
@@ -45,6 +48,12 @@ export const authorize =
 export function superadminOnly(req, res, next) {
   return isSuperadmin(req.user) ? next() : forbidden(res, "Accès réservé au super-administrateur");
 }
+
+// Réserver exige une adresse email confirmée (code reçu par email)
+export const requireVerifiedEmail = (req, res, next) =>
+  req.user?.emailVerifiedAt
+    ? next()
+    : forbidden(res, "Confirmez votre adresse email (code reçu par email) avant de réserver.");
 
 // Fonctions de client (réserver) : les comptes de l'équipe n'en ont pas l'usage
 export const requireRole = (role) => (req, res, next) =>

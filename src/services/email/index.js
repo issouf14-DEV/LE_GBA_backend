@@ -17,17 +17,6 @@ const orderRows = (order) =>
     row("Total", price(order.totalPrice)),
   ].join("");
 
-export const sendWelcomeEmail = (user) =>
-  sendEmail({
-    kind: "bienvenue",
-    to: user.email,
-    subject: "Bienvenue chez LE-GBA",
-    html: layout(
-      `Bienvenue ${user.name}`,
-      `<p>Votre compte est créé. Vous pouvez dès maintenant réserver un véhicule.</p>${button("Découvrir nos véhicules", "/vehicles")}`
-    ),
-  });
-
 export const sendNewOrderToAdmin = (order) => {
   if (!env.ADMIN_EMAIL) return Promise.resolve(false);
   return sendEmail({
@@ -86,17 +75,4 @@ export const sendRentalSummaryEmail = (order, to) =>
     to,
     subject: `Récapitulatif - réservation #${reference(order)}`,
     html: layout("Récapitulatif de location", orderRows(order)),
-  });
-
-// Le jeton est placé après # : le navigateur ne l'envoie jamais au serveur (pas de trace
-// dans les journaux de Vercel ou de l'hébergeur)
-export const sendPasswordResetEmail = (user, token) =>
-  sendEmail({
-    kind: "réinitialisation",
-    to: user.email,
-    subject: "Réinitialisation de votre mot de passe",
-    html: layout(
-      "Réinitialisation du mot de passe",
-      `<p>Ce lien est valable 30 minutes et ne peut servir qu'une fois. Si vous n'êtes pas à l'origine de cette demande, ignorez cet email : votre mot de passe reste inchangé.</p>${button("Choisir un nouveau mot de passe", `/reset-password#${token}`)}`
-    ),
   });

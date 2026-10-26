@@ -1,4 +1,5 @@
 import express from "express";
+import { resetManagerMfa } from "../controllers/mfaController.js";
 import {
   deleteManager,
   inviteManager,
@@ -25,5 +26,7 @@ router.post("/", validate(inviteManagerSchema), inviteManager);
 router.put("/:id/permissions", withId, validate(permissionsSchema), updatePermissions);
 router.patch("/:id/status", withId, validate(accountStatusSchema), updateManagerStatus);
 router.delete("/:id", withId, deleteManager);
+// Téléphone perdu : 2FA effacée, sessions fermées, reconfiguration à la connexion suivante
+router.post("/:id/mfa/reset", withId, resetManagerMfa);
 
 export default router;

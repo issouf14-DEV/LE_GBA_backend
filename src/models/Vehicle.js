@@ -1,11 +1,15 @@
 import mongoose from "mongoose";
 
+export const VEHICLE_TYPES = ["thermal", "electric", "hybrid"];
+export const MAX_PHOTOS = 8;
+
 const vehicleSchema = new mongoose.Schema(
   {
     brand: { type: String, required: true, trim: true, maxlength: 50 },
     model: { type: String, required: true, trim: true, maxlength: 80 },
     year: Number,
-    type: { type: String, enum: ["thermal", "electric", "hybrid"], default: "thermal" },
+    // Catégorie obligatoire : thermique, électrique ou hybride
+    type: { type: String, enum: VEHICLE_TYPES, required: true },
     fuel: { type: String, maxlength: 30 },
     transmission: { type: String, maxlength: 30 },
     power: { type: String, maxlength: 30 },
@@ -16,14 +20,16 @@ const vehicleSchema = new mongoose.Schema(
     // Prix de location par jour (FCFA)
     price: { type: Number, required: true, min: 0 },
     mileage: { type: Number, min: 0, default: 0 },
-    // URL https d'une image hébergée ailleurs
-    image: { type: String, default: "" },
-    // Photo envoyée depuis l'administration (base64) : jamais incluse dans les listes,
-    // servie à part par GET /api/vehicles/:id/image
-    imageData: { type: String, select: false },
-    imageType: { type: String, enum: ["image/png", "image/jpeg", "image/webp"], select: false },
-    hasImageData: { type: Boolean, default: false },
-    photos: [String],
+    // Photos envoyées par l'équipe, dans l'ordre d'affichage (la première est la principale).
+    // Seuls leurs identifiants sont ici ; le contenu est dans la collection VehiclePhoto.
+    gallery: {
+      type: [{ _id: { type: mongoose.Schema.Types.ObjectId, required: true } }],
+      default: [],
+      validate: [(list) => list.length <= MAX_PHOTOS, `${MAX_PHOTOS} photos maximum`],
+    },
+    // Anciennes images (adresses https d'avant la gestion des photos) : conservées et affichées
+    // tant que l'équipe n'a pas ajouté de photo. Plus aucune adresse externe n'est acceptée.
+    legacyImages: { type: [String], default: undefined, select: true },
     description: { type: String, maxlength: 1000 },
     tags: [{ type: String, maxlength: 30 }],
     available: { type: Boolean, default: true },

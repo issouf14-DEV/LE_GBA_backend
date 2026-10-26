@@ -1,9 +1,5 @@
-import mongoose from "mongoose";
 import { env } from "./env.js";
-
-// Refuse les opérateurs MongoDB ($gt, $ne…) cachés dans les filtres : bloque l'injection NoSQL
-mongoose.set("sanitizeFilter", true);
-mongoose.set("strictQuery", true);
+import mongoose from "./mongoose.js";
 
 export default async function connectDB(uri = env.MONGO_URI) {
   try {
