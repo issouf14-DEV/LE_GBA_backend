@@ -1,0 +1,45 @@
+# Déploiement Render (Blueprint) : New > Blueprint, puis choisir ce dépôt.
+# Un seul service web, offre gratuite. Sans RABBITMQ_URL, le worker tourne dans l'API
+# (les workers séparés de Render sont payants). Les secrets (sync: false) sont demandés
+# par Render à la création : ils ne sont jamais écrits dans ce fichier.
+services:
+  - type: web
+    name: le-gba-api
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Vercel puis le proxy de Render devant l'API
+      - key: TRUST_PROXY_HOPS
+        value: "2"
+      - key: RESET_CODE_TTL_SECONDS
+        value: "300"
+      - key: EMAIL_PROVIDER
+        value: brevo
+      - key: EMAIL_FROM_NAME
+        value: LE-GBA
+      - key: MFA_ISSUER
+        value: LE-GBA
+      - key: PAYMENT_PROVIDER
+        value: none
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: PROXY_SECRET
+        sync: false
+      - key: TOTP_ENC_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false

@@ -1,0 +1,31 @@
+# Garde l'API Render (offre gratuite) éveillée : Render l'endort après 15 min sans requête,
+# et le premier appel suivant attend alors près d'une minute. Ping de /health toutes les 10 min.
+# Adresse à définir dans GitHub : Settings > Secrets and variables > Actions > Variables >
+# RENDER_HEALTH_URL = https://<votre-service>.onrender.com/health
+name: Keep alive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping /health
+        env:
+          URL: ${{ vars.RENDER_HEALTH_URL }}
+        run: |
+          if [ -z "$URL" ]; then
+            echo "Variable RENDER_HEALTH_URL non définie"; exit 1
+          fi
+          # Réveil possible : jusqu'à 3 essais espacés de 30 s
+          for i in 1 2 3; do
+            if curl -fsS --max-time 60 "$URL"; then exit 0; fi
+            sleep 30
+          done
+          exit 1

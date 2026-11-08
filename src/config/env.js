@@ -18,7 +18,7 @@ const schema = z.object({
   JWT_REFRESH_SECRET: secret("JWT_REFRESH_SECRET"),
   // Une ou plusieurs URL exactes du frontend, séparées par des virgules
   FRONTEND_URL: z.string().min(1, "FRONTEND_URL manquant"),
-  // Nombre de proxys devant le serveur (0 en local, 2 derrière Vercel + Northflank). Par défaut 0 :
+  // Nombre de proxys devant le serveur (0 en local, 2 derrière Vercel + Render). Par défaut 0 :
   // sans proxy déclaré, l'en-tête X-Forwarded-For (falsifiable) est ignoré
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).default(0),
   // Secret partagé avec le proxy Vercel (en-tête X-Proxy-Auth). Défini en production :

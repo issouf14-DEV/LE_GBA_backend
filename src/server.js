@@ -49,7 +49,7 @@ const server = app.listen(env.PORT, () => {
   console.log(`API démarrée sur le port ${env.PORT} (${env.NODE_ENV})`);
 });
 
-// Arrêt propre (redéploiement sur Northflank) : fin du tour de relais en cours, puis du serveur
+// Arrêt propre (redéploiement sur Render) : fin du tour de relais en cours, puis du serveur
 process.on("SIGTERM", async () => {
   await inlineWorker?.stop();
   // Flux SSE fermés (les navigateurs se reconnecteront) : sinon server.close attendrait sans fin

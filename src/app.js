@@ -19,7 +19,7 @@ import vehicleRoutes from "./routes/vehicleRoutes.js";
 
 const app = express();
 
-// Derrière Vercel et Northflank : nécessaire pour connaître la vraie IP (limites de requêtes)
+// Derrière Vercel et Render : nécessaire pour connaître la vraie IP (limites de requêtes)
 app.set("trust proxy", env.TRUST_PROXY_HOPS);
 
 app.use(helmet());
@@ -28,7 +28,7 @@ if (env.NODE_ENV !== "test") app.use(morgan(env.NODE_ENV === "production" ? "tin
 
 app.use(cookieParser());
 
-// Appelé directement par l'hébergeur (Northflank) pour vérifier que le service répond
+// Appelé directement par l'hébergeur (Render) et par le ping keep-alive pour vérifier que le service répond
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
 // Appels de CinetPay (notification signée, retour du client) : sans en-tête anti-CSRF, donc
